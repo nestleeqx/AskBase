@@ -69,6 +69,12 @@ def _price_buttons() -> Markup:
 
 # --- Тексты ---
 
+# Команды в меню Telegram: ставятся при запуске опроса и при установке вебхука
+BOT_COMMANDS = [
+    {"command": "start", "description": "Начать сначала"},
+    {"command": "cancel", "description": "Отменить запись"},
+]
+
 # Приветствие по умолчанию; своё задаётся в настройках бота
 GREETING = DEFAULT_GREETING
 PRICES_TEXT = (
@@ -175,6 +181,31 @@ async def bot_username(redis: Redis, tg: TelegramClient) -> str:
     me = await tg.call("getMe")
     await redis.set(key, me["username"], ex=24 * 3600)
     return me["username"]
+
+
+async def ensure_webhook(redis: Redis, tg: TelegramClient, host: str = "") -> None:
+    """На Vercel ставит вебхук на постоянный адрес проекта и раз в час проверяет его.
+
+    host — адрес, на который пришёл запрос: запасной вариант, если Vercel не передал свой.
+    Локально вебхук не нужен — бот опрашивает Telegram сам (сервис bot в Docker).
+    """
+    s = get_settings()
+    host = s.vercel_project_production_url or host
+    if not s.vercel or not host:
+        return
+    url = f"https://{host}/api/telegram/webhook"
+    key = f"{PREFIX}tg:webhook:{s.telegram_webhook_secret[:12]}"
+    if await redis.get(key) == url:
+        return
+    await tg.call(
+        "setWebhook",
+        url=url,
+        secret_token=s.telegram_webhook_secret,
+        allowed_updates=["message", "callback_query"],
+    )
+    await tg.call("setMyCommands", commands=BOT_COMMANDS)
+    await redis.set(key, url, ex=3600)
+    log.info("Вебхук Telegram: %s", url)
 
 
 def operator_active(conv: Conversation) -> bool:

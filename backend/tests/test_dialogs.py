@@ -171,3 +171,31 @@ async def test_bookings(client, tg):
     assert resp.json()["status"] == "confirmed"
     other = (await client.get("/api/bookings", headers={"X-Visitor-Id": OTHER})).json()
     assert len(other["bookings"]) == 2
+
+
+async def test_webhook_requires_secret(client, tg):
+    update = message("Сколько стоит удаление зуба мудрости?")
+    resp = await client.post("/api/telegram/webhook", json=update)
+    assert resp.status_code == 403
+    secret = get_settings().telegram_webhook_secret
+    resp = await client.post(
+        "/api/telegram/webhook", json=update, headers={"X-Telegram-Bot-Api-Secret-Token": secret}
+    )
+    assert resp.status_code == 200
+    assert "Источник: Прайс-лист" in tg.texts()[-1]
+
+
+async def test_webhook_set_on_vercel(client, tg):
+    await _getme(tg)
+    settings = get_settings()
+    settings.vercel, settings.vercel_project_production_url = True, "askbase-api.vercel.app"
+    try:
+        await client.get("/api/telegram")
+        await client.get("/api/telegram")
+    finally:
+        settings.vercel, settings.vercel_project_production_url = False, ""
+    hooks = tg.of("setWebhook")
+    # Один раз: дальше адрес берётся из кеша
+    assert len(hooks) == 1
+    assert hooks[0]["url"] == "https://askbase-api.vercel.app/api/telegram/webhook"
+    assert hooks[0]["secret_token"] == settings.telegram_webhook_secret

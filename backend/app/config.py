@@ -48,6 +48,8 @@ class Settings(BaseSettings):
     trust_proxy: bool = True
     # Vercel выставляет VERCEL=1 во всех своих окружениях
     vercel: bool = False
+    # Постоянный адрес проекта на Vercel (подставляет сам Vercel) — на него ставится вебхук
+    vercel_project_production_url: str = ""
     # Секрет, который Vercel Cron передаёт в Authorization: Bearer …
     cron_secret: str = ""
     # Адрес сайта: на нём лежит страница «Правила записи» из демо-базы.

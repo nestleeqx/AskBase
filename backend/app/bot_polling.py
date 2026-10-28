@@ -10,7 +10,7 @@ from app.config import get_settings
 from app.db import SessionLocal, init_db
 from app.embeddings import create_embedder
 from app.llm import create_provider
-from app.services.bot import Bot
+from app.services.bot import BOT_COMMANDS, Bot
 from app.services.redis_store import get_redis
 from app.services.telegram import TelegramError, get_telegram
 
@@ -25,11 +25,6 @@ WEBHOOK_SET = (
     "Для локальной проверки заведите отдельного бота или снимите вебхук (deleteWebhook)."
 )
 
-COMMANDS = [
-    {"command": "start", "description": "Начать сначала"},
-    {"command": "cancel", "description": "Отменить запись"},
-]
-
 
 async def main() -> None:
     settings = get_settings()
@@ -40,7 +35,7 @@ async def main() -> None:
     await init_db()
     bot = Bot(SessionLocal, create_provider(settings), create_embedder(settings), get_redis(), tg)
     me = await tg.call("getMe")
-    await tg.call("setMyCommands", commands=COMMANDS)
+    await tg.call("setMyCommands", commands=BOT_COMMANDS)
     log.info("Бот @%s слушает сообщения", me["username"])
 
     offset = 0
