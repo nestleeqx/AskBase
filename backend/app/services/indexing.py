@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.embeddings import EmbeddingError, EmbeddingProvider
-from app.models import Chunk, Document, KbAnswer, now
+from app.models import CLINIC_OWNER, Chunk, Document, KbAnswer, now
 from app.services.chunking import Draft, embedding_input, make_chunks
 from app.services.extract import Extracted, ExtractError
 
@@ -90,6 +90,9 @@ async def cleanup_guest_docs(session: AsyncSession, ttl_hours: int) -> int:
     result = await session.execute(
         delete(Document).where(Document.visitor_id.is_not(None), Document.created_at < border)
     )
-    await session.execute(delete(KbAnswer).where(KbAnswer.created_at < border))
+    # Ответы владельца живут в общей базе клиники — удаляются только ответы гостей
+    await session.execute(
+        delete(KbAnswer).where(KbAnswer.created_at < border, KbAnswer.visitor_id != CLINIC_OWNER)
+    )
     await session.commit()
     return result.rowcount or 0

@@ -8,6 +8,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api import (
     analytics,
+    auth,
     chat,
     dialogs,
     documents,
@@ -34,6 +35,7 @@ LIMIT_MESSAGES = {
     "upload": "Лимит демо: {limit} загрузок в час",
     "chat": "Лимит демо: {limit} вопросов в час",
     "reply": "Лимит демо: {limit} ответов в час",
+    "login": "Слишком много попыток входа",
 }
 
 
@@ -93,6 +95,7 @@ async def rate_limited(_: Request, exc: RateLimitExceeded):
 
 
 app.include_router(misc.router)
+app.include_router(auth.router)
 app.include_router(documents.router)
 app.include_router(search.router)
 app.include_router(chat.router)

@@ -3,6 +3,13 @@ from app.llm.base import LLMError, LLMInvalidResponse, LLMProvider
 
 
 def create_provider(settings: Settings) -> LLMProvider:
+    provider = _create(settings)
+    if provider.name != "mock":
+        provider.hedge_after = settings.llm_hedge_seconds or None
+    return provider
+
+
+def _create(settings: Settings) -> LLMProvider:
     if settings.llm_provider == "openai":
         from app.llm.openai_compat import OpenAICompatibleProvider
 

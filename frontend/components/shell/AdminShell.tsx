@@ -8,6 +8,7 @@ import {
   FileStack,
   Globe,
   Inbox,
+  LogOut,
   Menu,
   MessagesSquare,
   SearchCheck,
@@ -15,10 +16,10 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
-import useSWR from "swr";
-import { api } from "@/lib/api";
+import useSWR, { useSWRConfig } from "swr";
+import { api, setOwnerToken } from "@/lib/api";
 import { CLINIC_RULES_PATH } from "@/lib/site";
 import { Logo } from "../Logo";
 
@@ -77,6 +78,7 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   // Бейджи: сколько клиентов ждут администратора и сколько заявок ждут звонка
   const { data: dialogs } = useSWR(["dialogs", "", false], () => api.dialogs(), { refreshInterval: 10000 });
   const { data: bookings } = useSWR("bookings", api.bookings, { refreshInterval: 10000 });
+  const { data: auth } = useSWR("auth", api.auth);
   // Тот же ключ, что у вкладки «Нерешённые», — после ответа в базу бейдж обновится сам
   const { data: unanswered } = useSWR(["unanswered", "open"], () => api.unanswered("open"), {
     refreshInterval: 10000,
@@ -148,9 +150,13 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       </nav>
       <div className="p-3">
         <div className="rounded-xl border border-line bg-gradient-to-b from-accent-soft/70 to-surface p-3.5">
-          <p className="text-[13px] font-semibold text-ink">Демо: клиника «Белая линия»</p>
+          <p className="text-[13px] font-semibold text-ink">
+            {auth?.owner ? "Вы — владелец клиники" : "Демо: клиника «Белая линия»"}
+          </p>
           <p className="mt-1 text-xs leading-relaxed text-ink-2">
-            Документы клиники общие для всех. Свои документы видите только вы — через сутки они удаляются.
+            {auth?.owner
+              ? "Документы и настройки бота, которые вы меняете, действуют для всех клиентов."
+              : "Документы клиники общие для всех. Свои документы видите только вы — через сутки они удаляются."}
           </p>
         </div>
       </div>
@@ -159,16 +165,43 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
 }
 
 /** Чья это админка: демо открыто от лица стоматологии «Белая линия». */
+/** Кто вошёл: гость демо или владелец клиники. Клик — на страницу входа, сменить роль. */
 function ClinicBadge() {
+  const router = useRouter();
+  const { mutate } = useSWRConfig();
+  const { data: auth } = useSWR("auth", api.auth);
+  const owner = !!auth?.owner;
   return (
-    <span className="flex items-center gap-2.5 max-sm:hidden" title="Демо открыто от лица клиники «Белая линия»">
-      <span className="grid size-9 shrink-0 place-items-center rounded-full bg-gradient-to-br from-[#5eead4] to-[#0d9488] text-sm font-semibold text-white">
-        Б
-      </span>
-      <span className="leading-tight max-xl:hidden">
-        <span className="block text-[13px] font-medium whitespace-nowrap text-ink">Клиника «Белая линия»</span>
-        <span className="block text-[11px] text-ink-3">гостевой доступ</span>
-      </span>
+    <span className="flex items-center gap-2">
+      <Link
+        href="/login"
+        className="flex items-center gap-2.5 rounded-xl py-1 pr-2 pl-1 transition-colors hover:bg-sunken"
+        title={owner ? "Вы вошли как владелец клиники. Сменить вход" : "Гостевой доступ. Войти как владелец"}
+      >
+        <span className="grid size-9 shrink-0 place-items-center rounded-full bg-gradient-to-br from-[#5eead4] to-[#0d9488] text-sm font-semibold text-white">
+          Б
+        </span>
+        <span className="leading-tight max-xl:hidden">
+          <span className="block text-[13px] font-medium whitespace-nowrap text-ink">Клиника «Белая линия»</span>
+          <span className="block text-[11px] text-ink-3">{owner ? "владелец" : "гостевой доступ"}</span>
+        </span>
+      </Link>
+      {owner && (
+        <button
+          type="button"
+          onClick={async () => {
+            setOwnerToken(null);
+            // Кеш запросов собран от лица владельца — сбрасываем его
+            await mutate(() => true, undefined, { revalidate: false });
+            router.push("/login");
+          }}
+          aria-label="Выйти из режима владельца"
+          title="Выйти"
+          className="grid size-9 place-items-center rounded-xl text-ink-3 hover:bg-sunken hover:text-ink"
+        >
+          <LogOut className="size-4" />
+        </button>
+      )}
     </span>
   );
 }

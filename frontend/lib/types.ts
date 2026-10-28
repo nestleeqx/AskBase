@@ -22,6 +22,8 @@ export type Doc = {
 };
 
 export type UploadLimits = {
+  /** Вошёл владелец: документы идут в общую базу клиники, без гостевых лимитов */
+  owner: boolean;
   guest_docs_limit: number;
   guest_docs_left: number;
   max_upload_mb: number;
@@ -165,8 +167,10 @@ export type Tone = "neutral" | "friendly" | "formal" | "brief";
 export type BotSettingsValues = { greeting: string; tone: Tone; phone: string; hours: string };
 
 export type BotSettings = BotSettingsValues & {
-  /** Свои настройки гостя, а не общие настройки клиники */
+  /** Настройки изменены: у гостя — свои, у владельца — общие настройки клиники */
   custom: boolean;
+  /** guest — действуют только у гостя, clinic — для всех клиентов */
+  scope: "guest" | "clinic";
   defaults: BotSettingsValues;
   tones: Record<Tone, string>;
 };
@@ -186,4 +190,10 @@ export type Analytics = {
   unanswered: number;
   topics: { topic: string; label: string; count: number }[];
   timezone: string;
+};
+
+export type AuthStatus = {
+  owner: boolean;
+  /** Пароль владельца задан на сервере — вход владельца доступен */
+  owner_enabled: boolean;
 };

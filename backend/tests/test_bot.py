@@ -529,3 +529,48 @@ async def test_old_or_cancelled_booking_does_not_ask(bot):
     await say(bot, botmod.CANCEL)
     await set_booking(status="cancelled", created_at=now())
     assert await say(bot, botmod.BOOK) == botmod.BOOK_START
+
+
+async def test_my_booking_status(bot):
+    # Заявок нет — бот так и говорит, а не ищет ответ в документах
+    assert (await say(bot, "Я записан?")).startswith("Заявок на запись от вас пока нет")
+    await book(bot, "Анна", "+7 900 123-45-67", "Чистка", "Утром")
+    reply = await say(bot, "Я записан?")
+    assert reply.startswith("Ваша заявка на запись принята, администратор ещё не звонил")
+    assert "Удобное время: Утром" in reply
+    await set_booking(status="confirmed")
+    assert (await say(bot, "Я записан?")).startswith("Да, вы записаны")
+    msgs = await chat_messages()
+    assert msgs[-1].reason == "my_booking" and msgs[-1].answered is None
+
+
+async def test_cancel_confirmed_booking(bot, redis):
+    from app.config import get_settings
+
+    get_settings().manager_chat_id = 4242
+    try:
+        await book(bot, "Анна", "+7 900 123-45-67", "Чистка", "Утром")
+        await set_booking(status="confirmed")
+        reply = await say(bot, "/cancel")
+        assert reply.startswith("Отменить запись?") and "Имя: Анна" in reply
+        buttons = bot.tg.of("sendMessage")[-1]["reply_markup"]["inline_keyboard"]
+        assert [row[0]["callback_data"] for row in buttons] == ["bk:cancel", "bk:stay"]
+
+        await bot.handle(button("bk:cancel"))
+        # Клиенту — что запись отменена, менеджеру — уведомление
+        assert bot.tg.texts()[-2] == botmod.BOOKING_CANCELLED_DONE
+        assert "Клиент отменил запись" in bot.tg.texts()[-1]
+        assert (await bookings_of_chat())[0].status == "cancelled"
+        assert (await chat_messages())[-1].text.startswith("Клиент отменил запись: Анна")
+        # Отменять больше нечего
+        assert await say(bot, "/cancel") == botmod.NOTHING_TO_CANCEL
+    finally:
+        get_settings().manager_chat_id = None
+
+
+async def test_cancel_by_text_and_stay(bot):
+    await book(bot, "Анна", "+7 900 123-45-67", "Чистка", "Утром")
+    assert (await say(bot, "Отмените мою запись, пожалуйста")).startswith("Отменить запись?")
+    await bot.handle(button("bk:stay"))
+    assert bot.tg.texts()[-1] == botmod.BOOK_KEPT["new"]
+    assert (await bookings_of_chat())[0].status == "new"

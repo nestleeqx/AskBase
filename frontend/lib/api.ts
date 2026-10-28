@@ -1,5 +1,6 @@
 import type {
   Analytics,
+  AuthStatus,
   Booking,
   BotSettings,
   BotSettingsValues,
@@ -21,6 +22,23 @@ import type {
 export const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
 
 const VISITOR_KEY = "askbase:visitor";
+const OWNER_KEY = "askbase:owner";
+
+/** Токен владельца клиники после входа по паролю. Нет токена — гостевой режим. */
+export function ownerToken(): string | null {
+  try {
+    return localStorage.getItem(OWNER_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setOwnerToken(token: string | null) {
+  try {
+    if (token) localStorage.setItem(OWNER_KEY, token);
+    else localStorage.removeItem(OWNER_KEY);
+  } catch {}
+}
 
 /** Анонимный id посетителя: свои загруженные документы видит только он. */
 export function visitorId(): string {
@@ -65,6 +83,8 @@ async function errorMessage(resp: Response): Promise<string> {
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set("X-Visitor-Id", visitorId());
+  const owner = ownerToken();
+  if (owner) headers.set("X-Owner-Token", owner);
   // FormData сам выставит multipart с границей — тип задаём только для JSON
   if (init.body && !(init.body instanceof FormData)) headers.set("Content-Type", "application/json");
 
@@ -84,6 +104,9 @@ const json = (method: string, body?: unknown): RequestInit => ({
 });
 
 export const api = {
+  auth: () => request<AuthStatus>("/api/auth"),
+  login: (password: string) => request<{ token: string }>("/api/auth/login", json("POST", { password })),
+
   documents: () => request<DocumentList>("/api/documents"),
   uploadFile: (file: File) => {
     const form = new FormData();

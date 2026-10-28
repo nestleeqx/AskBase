@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.chat import message_out
 from app.config import get_settings
-from app.deps import RedisDep, SessionDep, VisitorDep
+from app.deps import RedisDep, SessionDep, Viewer, ViewerDep
 from app.models import DEMO_VISITOR, Booking, Conversation, Message, TelegramChat, now
 from app.schemas import (
     BookingList,
@@ -44,8 +44,18 @@ BOT_BACK = (
 )
 
 
-def _visible(visitor: str):
-    return Conversation.visitor_id.in_([visitor, DEMO_VISITOR])
+def _visible(viewer: Viewer):
+    """Гость видит демо-диалоги и свой чат, владелец — все диалоги клиники."""
+    if viewer.owner:
+        return Conversation.channel == "telegram"
+    return Conversation.visitor_id.in_([viewer.visitor, DEMO_VISITOR])
+
+
+def _can_change(viewer: Viewer, owner_id: str | None) -> bool:
+    """Демо-диалоги и демо-заявки не меняет никто; владелец — всё остальное, гость — своё."""
+    if owner_id == DEMO_VISITOR:
+        return False
+    return viewer.owner or owner_id == viewer.visitor
 
 
 def _active_until(conv: Conversation):
@@ -84,13 +94,13 @@ def _booking_out(b: Booking, client: str, demo: bool) -> BookingOut:
 
 
 async def _dialog(
-    session: AsyncSession, conversation_id: str, visitor: str
+    session: AsyncSession, conversation_id: str, viewer: Viewer
 ) -> tuple[Conversation, TelegramChat]:
     row = (
         await session.execute(
             select(Conversation, TelegramChat)
             .join(TelegramChat, TelegramChat.conversation_id == Conversation.id)
-            .where(Conversation.id == conversation_id, _visible(visitor))
+            .where(Conversation.id == conversation_id, _visible(viewer))
         )
     ).first()
     if row is None:
@@ -99,10 +109,10 @@ async def _dialog(
 
 
 async def _own_dialog(
-    session: AsyncSession, conversation_id: str, visitor: str
+    session: AsyncSession, conversation_id: str, viewer: Viewer
 ) -> tuple[Conversation, TelegramChat]:
-    conv, chat = await _dialog(session, conversation_id, visitor)
-    if conv.visitor_id != visitor:
+    conv, chat = await _dialog(session, conversation_id, viewer)
+    if not _can_change(viewer, conv.visitor_id):
         raise HTTPException(403, DEMO_READONLY)
     return conv, chat
 
@@ -110,14 +120,14 @@ async def _own_dialog(
 @router.get("/dialogs", response_model=DialogList)
 async def dialogs(
     session: SessionDep,
-    visitor: VisitorDep,
+    viewer: ViewerDep,
     q: str = Query("", max_length=100),
     waiting: bool = False,
 ):
     query = (
         select(Conversation, TelegramChat)
         .join(TelegramChat, TelegramChat.conversation_id == Conversation.id)
-        .where(_visible(visitor))
+        .where(_visible(viewer))
     )
     words = q.strip()
     if words:
@@ -168,8 +178,8 @@ async def dialogs(
 
 
 @router.get("/dialogs/{conversation_id}", response_model=DialogDetail)
-async def dialog(conversation_id: str, session: SessionDep, visitor: VisitorDep):
-    conv, chat = await _dialog(session, conversation_id, visitor)
+async def dialog(conversation_id: str, session: SessionDep, viewer: ViewerDep):
+    conv, chat = await _dialog(session, conversation_id, viewer)
     messages = list(
         await session.scalars(
             select(Message).where(Message.conversation_id == conv.id).order_by(Message.id)
@@ -188,18 +198,18 @@ async def dialog(conversation_id: str, session: SessionDep, visitor: VisitorDep)
 
 @router.post("/dialogs/{conversation_id}/reply", response_model=DialogDetail)
 async def reply(
-    conversation_id: str, body: ReplyIn, session: SessionDep, redis: RedisDep, visitor: VisitorDep
+    conversation_id: str, body: ReplyIn, session: SessionDep, redis: RedisDep, viewer: ViewerDep
 ):
     """Ответ администратора: уходит клиенту в Telegram, бот в этом чате замолкает."""
     s = get_settings()
-    conv, chat = await _own_dialog(session, conversation_id, visitor)
+    conv, chat = await _own_dialog(session, conversation_id, viewer)
     text = body.text.strip()
     if not text:
         raise HTTPException(422, "Напишите ответ.")
     tg = get_telegram()
     if tg is None:
         raise HTTPException(503, "Telegram-бот сейчас недоступен. Попробуйте позже.")
-    await hit_limit(redis, "reply", visitor, s.questions_per_hour)
+    await hit_limit(redis, "reply", viewer.visitor, s.questions_per_hour)
     try:
         await tg.send(chat.chat_id, f"<b>Администратор клиники:</b>\n{escape(text)}")
     except TelegramError as e:
@@ -211,13 +221,13 @@ async def reply(
     conv.waiting_since = None
     conv.operator_until = now() + timedelta(minutes=s.operator_minutes)
     await session.commit()
-    return await dialog(conversation_id, session, visitor)
+    return await dialog(conversation_id, session, viewer)
 
 
 @router.post("/dialogs/{conversation_id}/release", response_model=DialogDetail)
-async def release(conversation_id: str, session: SessionDep, visitor: VisitorDep):
+async def release(conversation_id: str, session: SessionDep, viewer: ViewerDep):
     """«Вернуть боту»: бот снова отвечает клиенту сам."""
-    conv, chat = await _own_dialog(session, conversation_id, visitor)
+    conv, chat = await _own_dialog(session, conversation_id, viewer)
     was_active = _active_until(conv) is not None
     conv.operator_until = None
     conv.waiting_since = None
@@ -228,17 +238,17 @@ async def release(conversation_id: str, session: SessionDep, visitor: VisitorDep
             await tg.send(chat.chat_id, BOT_BACK)
         except TelegramError as e:
             log.warning("Telegram: %s", e)
-    return await dialog(conversation_id, session, visitor)
+    return await dialog(conversation_id, session, viewer)
 
 
 @router.get("/bookings", response_model=BookingList)
-async def bookings(session: SessionDep, visitor: VisitorDep):
+async def bookings(session: SessionDep, viewer: ViewerDep):
     rows = (
         await session.execute(
             select(Booking, TelegramChat.title, Conversation.visitor_id)
             .join(Conversation, Conversation.id == Booking.conversation_id)
             .join(TelegramChat, TelegramChat.conversation_id == Conversation.id)
-            .where(_visible(visitor))
+            .where(_visible(viewer))
             .order_by(Booking.created_at.desc())
         )
     ).all()
@@ -248,20 +258,20 @@ async def bookings(session: SessionDep, visitor: VisitorDep):
 
 @router.patch("/bookings/{booking_id}", response_model=BookingOut)
 async def update_booking(
-    booking_id: str, body: BookingPatch, session: SessionDep, visitor: VisitorDep
+    booking_id: str, body: BookingPatch, session: SessionDep, viewer: ViewerDep
 ):
     row = (
         await session.execute(
             select(Booking, TelegramChat.title, Conversation.visitor_id)
             .join(Conversation, Conversation.id == Booking.conversation_id)
             .join(TelegramChat, TelegramChat.conversation_id == Conversation.id)
-            .where(Booking.id == booking_id, _visible(visitor))
+            .where(Booking.id == booking_id, _visible(viewer))
         )
     ).first()
     if row is None:
         raise HTTPException(404, "Заявка не найдена.")
     b, title, owner = row
-    if owner != visitor:
+    if not _can_change(viewer, owner):
         raise HTTPException(403, "Это пример заявки — её статус менять нельзя.")
     b.status = body.status
     await session.commit()

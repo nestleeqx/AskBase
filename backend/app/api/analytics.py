@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 
 from app.config import get_settings
-from app.deps import SessionDep, VisitorDep
+from app.deps import SessionDep, ViewerDep
 from app.models import DEMO_VISITOR, Booking, Conversation, Message, now
 from app.services.prompts import TOPICS
 
@@ -25,7 +25,14 @@ UNANSWERED = ("no_match", "not_in_docs", "no_sources", "error")
 # Ответы бота на вопрос клиента: из них считается доля «с ответом»
 QUESTION_REASONS = ("answered", *UNANSWERED)
 # Ответы бота на любое обращение клиента — для тем: вопросы, запись, просьба о человеке
-TOPIC_REASONS = (*QUESTION_REASONS, "booking_intent", "booking", "operator")
+TOPIC_REASONS = (
+    *QUESTION_REASONS,
+    "booking_intent",
+    "booking",
+    "my_booking",
+    "cancel_booking",
+    "operator",
+)
 
 
 class Day(BaseModel):
@@ -57,14 +64,19 @@ class Analytics(BaseModel):
 
 
 @router.get("", response_model=Analytics)
-async def analytics(session: SessionDep, visitor: VisitorDep):
+async def analytics(session: SessionDep, viewer: ViewerDep):
     tz = ZoneInfo(get_settings().clinic_timezone)
     today = now().astimezone(tz).date()
     first = today - timedelta(days=DAYS - 1)
     since = datetime.combine(first, datetime.min.time(), tzinfo=tz)
+    # Владелец видит всех клиентов, гость — демо-диалоги и свой чат
     visible = (
-        Conversation.channel == "telegram",
-        Conversation.visitor_id.in_([visitor, DEMO_VISITOR]),
+        (Conversation.channel == "telegram",)
+        if viewer.owner
+        else (
+            Conversation.channel == "telegram",
+            Conversation.visitor_id.in_([viewer.visitor, DEMO_VISITOR]),
+        )
     )
 
     rows = (

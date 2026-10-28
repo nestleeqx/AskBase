@@ -25,7 +25,8 @@ export function UploadPanel({ limits, busy, onFile, onUrl, onReject }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const left = limits?.guest_docs_left ?? 0;
-  const full = !!limits && left === 0;
+  // Владелец пополняет общую базу клиники — гостевой лимит к нему не относится
+  const full = !!limits && !limits.owner && left === 0;
   const disabled = busy || full || !limits;
 
   function pick(file: File | undefined) {
@@ -134,9 +135,11 @@ export function UploadPanel({ limits, busy, onFile, onUrl, onReject }: Props) {
 
       <p className="mt-3 text-xs leading-relaxed text-ink-3">
         {limits &&
-          (full
-            ? `Вы загрузили ${limits.guest_docs_limit} ${plural(limits.guest_docs_limit, ["документ", "документа", "документов"])} — это максимум для демо. Удалите один, чтобы добавить новый.`
-            : `Можно добавить ещё ${left} ${plural(left, ["документ", "документа", "документов"])}. Их видите только вы, через ${limits.guest_docs_ttl_hours} ${plural(limits.guest_docs_ttl_hours, ["час", "часа", "часов"])} они удалятся. Объём — до ${formatNumber(limits.max_doc_chars)} символов.`)}
+          (limits.owner
+            ? `Документ попадёт в общую базу клиники: по нему бот будет отвечать всем клиентам. Объём — до ${formatNumber(limits.max_doc_chars)} символов.`
+            : full
+              ? `Вы загрузили ${limits.guest_docs_limit} ${plural(limits.guest_docs_limit, ["документ", "документа", "документов"])} — это максимум для демо. Удалите один, чтобы добавить новый.`
+              : `Можно добавить ещё ${left} ${plural(left, ["документ", "документа", "документов"])}. Их видите только вы, через ${limits.guest_docs_ttl_hours} ${plural(limits.guest_docs_ttl_hours, ["час", "часа", "часов"])} они удалятся. Объём — до ${formatNumber(limits.max_doc_chars)} символов.`)}
       </p>
     </Panel>
   );

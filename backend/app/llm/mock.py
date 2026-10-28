@@ -46,7 +46,11 @@ class MockProvider(LLMProvider):
 
         lowered = question.lower()
         intent = (
-            "booking"
+            "cancel_booking"
+            if re.search(r"отмен\w* (мою )?запис", lowered)
+            else "my_booking"
+            if re.search(r"я записан|моя запись|мою запись", lowered)
+            else "booking"
             if re.search(r"запиш|записат", lowered)
             else "operator"
             if re.search(r"администратор|живого|человек", lowered)

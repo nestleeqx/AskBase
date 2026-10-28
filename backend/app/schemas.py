@@ -25,6 +25,8 @@ class DocumentOut(BaseModel):
 
 
 class UploadLimits(BaseModel):
+    # Владелец загружает в общую базу клиники — гостевые лимиты к нему не относятся
+    owner: bool = False
     guest_docs_limit: int
     guest_docs_left: int
     max_upload_mb: float

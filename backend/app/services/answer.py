@@ -48,10 +48,20 @@ REASONS = {
     "booking_intent": "Клиент хочет записаться — бот начал запись по шагам",
     "operator_intent": "Клиент попросил администратора",
     "smalltalk": "Приветствие или реплика без вопроса — бот ответил сам",
+    "my_booking": "Клиент спросил о своей записи — бот ответил по заявкам",
+    "cancel_booking": "Клиент попросил отменить запись",
 }
 # Тексты для тестового чата: в Telegram вместо них запускается запись по шагам
 # или передача администратору
 OPERATOR_INTENT = "Передал ваш запрос администратору — он ответит в ближайшее время."
+MY_BOOKING_HINT = (
+    "Статус своей записи бот покажет в Telegram — там он видит ваши заявки. "
+    "В тестовом чате записи нет."
+)
+CANCEL_BOOKING_HINT = (
+    "Отменить запись можно в Telegram-боте клиники — командой /cancel или словами "
+    "«отмените запись»."
+)
 
 
 @dataclass
@@ -280,6 +290,13 @@ async def answer_question(
         result = handoff("smalltalk", "other")
         result.intent, result.answered = "smalltalk", None
         result.text = reply.answer.strip() or SMALLTALK[0][2]
+        return result
+    if reply.intent in ("my_booking", "cancel_booking"):
+        # Про свою запись клиента знает система, а не документы: отвечает канал (Telegram),
+        # в тестовом чате — подсказка
+        result = handoff(reply.intent, "booking")
+        result.intent, result.answered = reply.intent, None
+        result.text = MY_BOOKING_HINT if reply.intent == "my_booking" else CANCEL_BOOKING_HINT
         return result
     if reply.intent != "question":
         booking = reply.intent == "booking"

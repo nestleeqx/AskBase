@@ -1,10 +1,11 @@
 "use client";
 
-import { Info, RotateCcw, Save } from "lucide-react";
+import { RotateCcw, Save } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import useSWR from "swr";
 import { api } from "@/lib/api";
 import type { BotSettings, BotSettingsValues, Tone } from "@/lib/types";
+import { ScopeNote } from "../ScopeNote";
 import { useToast } from "../Toast";
 import { Button, Panel } from "../ui";
 
@@ -187,11 +188,13 @@ export function SettingsView() {
       <p className="mt-1 max-w-2xl text-sm leading-relaxed text-ink-2">
         Приветствие, тон ответов и контакты, которые бот называет, когда передаёт вопрос администратору.
       </p>
-      <p className="mt-3 flex max-w-2xl items-start gap-2 rounded-xl bg-info-soft px-3.5 py-2.5 text-xs leading-relaxed text-ink-2">
-        <Info className="mt-px size-3.5 shrink-0 text-info" />
-        Это демо: ваши настройки действуют только в вашем тестовом чате и в вашем Telegram-чате, подключённом к админке.
-        Другие посетители видят бота как прежде.
-      </p>
+      {data && (
+        <ScopeNote
+          owner={data.scope === "clinic"}
+          guest="Это демо-песочница: ваши настройки действуют только в вашем тестовом чате и в вашем Telegram-чате, подключённом к админке. Остальные клиенты видят бота как прежде."
+          clinic="Вы вошли как владелец: приветствие, тон и контакты меняются у всех клиентов бота — в Telegram и в тестовом чате. У гостей демо, задавших свои настройки, остаются их собственные."
+        />
+      )}
       {!data ? (
         <div className="skeleton mt-5 h-96 rounded-2xl" />
       ) : (

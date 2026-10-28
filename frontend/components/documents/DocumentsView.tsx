@@ -7,6 +7,7 @@ import { api } from "@/lib/api";
 import { formatNumber, formatSeconds, formatSize, KIND_LABELS, plural } from "@/lib/format";
 import type { Doc } from "@/lib/types";
 import { useConfirm } from "../Confirm";
+import { ScopeNote } from "../ScopeNote";
 import { useToast } from "../Toast";
 import { buttonClasses, Panel, SectionLabel } from "../ui";
 import { ChunksDrawer } from "./ChunksDrawer";
@@ -224,6 +225,13 @@ export function DocumentsView() {
           База знаний, по которой бот отвечает клиентам. Новый документ становится доступен боту сразу после индексации
           — обычно за несколько секунд.
         </p>
+        {data && (
+          <ScopeNote
+            owner={data.limits.owner}
+            guest="Это демо-песочница: ваши документы бот использует только в вашем тестовом чате и в вашем Telegram-чате, подключённом к админке. Для остальных клиентов база клиники не меняется, а ваши документы удалятся через сутки."
+            clinic="Вы вошли как владелец: загруженный документ попадает в общую базу клиники, и бот отвечает по нему всем клиентам."
+          />
+        )}
       </div>
 
       <UploadPanel

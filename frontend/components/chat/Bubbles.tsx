@@ -159,6 +159,7 @@ const BOOKING_NOTES: [prefix: string, title: string, done: boolean][] = [
   ["Заявка изменена:", "Клиент изменил заявку на запись", true],
   ["Запись без изменений:", "Клиент оставил запись как есть", false],
   ["Клиент отменил запись по шагам.", "Клиент отменил запись по шагам", false],
+  ["Клиент отменил запись:", "Клиент отменил запись", false],
 ];
 
 function BookingNote({ message, side }: { message: ChatMessage; side: Side }) {

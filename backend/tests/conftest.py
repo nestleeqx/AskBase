@@ -19,6 +19,7 @@ os.environ.update(
     OPENAI_API_KEY="",
     TELEGRAM_BOT_TOKEN="",
     MANAGER_CHAT_ID="",
+    OWNER_PASSWORD="owner-test-pass",
 )
 
 import asyncpg  # noqa: E402

@@ -13,8 +13,16 @@ from pydantic import BaseModel, Field
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.deps import EmbedderDep, RedisDep, SessionDep, VisitorDep
-from app.models import DEMO_VISITOR, Conversation, KbAnswer, Message, TelegramChat, now
+from app.deps import EmbedderDep, RedisDep, SessionDep, Viewer, ViewerDep
+from app.models import (
+    CLINIC_OWNER,
+    DEMO_VISITOR,
+    Conversation,
+    KbAnswer,
+    Message,
+    TelegramChat,
+    now,
+)
 from app.services.answer import REASONS
 from app.services.kb_answers import add_answer
 from app.services.redis_store import PREFIX
@@ -63,19 +71,18 @@ def _demo_key(visitor: str) -> str:
     return f"{PREFIX}resolved:{visitor}"
 
 
-def _visible(visitor: str):
-    """Telegram — свои и демо-диалоги, тестовый чат — только свой."""
+def _visible(viewer: Viewer):
+    """Telegram — свои и демо-диалоги (владелец — все), тестовый чат — только свой."""
+    telegram = Conversation.channel == "telegram"
+    if not viewer.owner:
+        telegram = and_(telegram, Conversation.visitor_id.in_([viewer.visitor, DEMO_VISITOR]))
     return or_(
-        and_(
-            Conversation.channel == "telegram",
-            Conversation.visitor_id.in_([visitor, DEMO_VISITOR]),
-        ),
-        and_(Conversation.channel == "test", Conversation.visitor_id == visitor),
+        telegram, and_(Conversation.channel == "test", Conversation.visitor_id == viewer.visitor)
     )
 
 
 async def _items(
-    session: AsyncSession, redis, visitor: str, message_id: int | None = None
+    session: AsyncSession, redis, viewer: Viewer, message_id: int | None = None
 ) -> list[UnansweredItem]:
     query = (
         select(Message, Conversation, TelegramChat.title)
@@ -85,7 +92,7 @@ async def _items(
             Message.role == "bot",
             Message.answered.is_(False),
             Message.reason.in_(UNANSWERED),
-            _visible(visitor),
+            _visible(viewer),
         )
         .order_by(Message.id.desc())
         .limit(200)
@@ -111,12 +118,12 @@ async def _items(
         a.message_id: a.answer
         for a in await session.scalars(
             select(KbAnswer).where(
-                KbAnswer.visitor_id == visitor,
+                KbAnswer.visitor_id.in_([viewer.visitor, CLINIC_OWNER]),
                 KbAnswer.message_id.in_([m.id for m, _, _ in rows]),
             )
         )
     }
-    demo_resolved = await redis.smembers(_demo_key(visitor))
+    demo_resolved = await redis.smembers(_demo_key(viewer.visitor))
 
     items = []
     for m, conv, title in rows:
@@ -140,18 +147,18 @@ async def _items(
     return items
 
 
-async def _one(session: AsyncSession, redis, visitor: str, message_id: int) -> UnansweredItem:
-    items = await _items(session, redis, visitor, message_id)
+async def _one(session: AsyncSession, redis, viewer: Viewer, message_id: int) -> UnansweredItem:
+    items = await _items(session, redis, viewer, message_id)
     if not items:
         raise HTTPException(404, NOT_FOUND)
     return items[0]
 
 
 async def _set_resolved(
-    session: AsyncSession, redis, visitor: str, item: UnansweredItem, resolved: bool
+    session: AsyncSession, redis, viewer: Viewer, item: UnansweredItem, resolved: bool
 ) -> None:
     if item.demo:
-        key = _demo_key(visitor)
+        key = _demo_key(viewer.visitor)
         if resolved:
             await redis.sadd(key, str(item.id))
             await redis.expire(key, DEMO_TTL)
@@ -167,10 +174,10 @@ async def _set_resolved(
 async def unanswered(
     session: SessionDep,
     redis: RedisDep,
-    visitor: VisitorDep,
+    viewer: ViewerDep,
     status: Literal["open", "resolved", "all"] = Query("open"),
 ):
-    items = await _items(session, redis, visitor)
+    items = await _items(session, redis, viewer)
     opened = sum(1 for i in items if not i.resolved)
     total = len(items)
     if status != "all":
@@ -180,11 +187,11 @@ async def unanswered(
 
 @router.post("/{message_id}/resolve", response_model=UnansweredItem)
 async def resolve(
-    message_id: int, body: ResolveIn, session: SessionDep, redis: RedisDep, visitor: VisitorDep
+    message_id: int, body: ResolveIn, session: SessionDep, redis: RedisDep, viewer: ViewerDep
 ):
-    item = await _one(session, redis, visitor, message_id)
-    await _set_resolved(session, redis, visitor, item, body.resolved)
-    return await _one(session, redis, visitor, message_id)
+    item = await _one(session, redis, viewer, message_id)
+    await _set_resolved(session, redis, viewer, item, body.resolved)
+    return await _one(session, redis, viewer, message_id)
 
 
 @router.post("/{message_id}/answer", response_model=UnansweredItem)
@@ -194,19 +201,19 @@ async def answer(
     session: SessionDep,
     redis: RedisDep,
     embedder: EmbedderDep,
-    visitor: VisitorDep,
+    viewer: ViewerDep,
 ):
     """Ответ администратора — в базу знаний: бот начнёт отвечать на такой вопрос сам."""
-    item = await _one(session, redis, visitor, message_id)
+    item = await _one(session, redis, viewer, message_id)
     doc = await add_answer(
         session,
         embedder,
-        visitor,
+        viewer.profile_key,
         " ".join(body.question.split()),
         body.answer.strip(),
         message_id,
     )
     if doc.status != "ready":
         raise HTTPException(502, doc.error or ADD_FAILED)
-    await _set_resolved(session, redis, visitor, item, True)
-    return await _one(session, redis, visitor, message_id)
+    await _set_resolved(session, redis, viewer, item, True)
+    return await _one(session, redis, viewer, message_id)

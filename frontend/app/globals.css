@@ -77,12 +77,7 @@ body {
 }
 
 .skeleton {
-  background: linear-gradient(
-    90deg,
-    var(--color-line) 0px,
-    var(--color-sunken) 90px,
-    var(--color-line) 180px
-  );
+  background: linear-gradient(90deg, var(--color-line) 0px, var(--color-sunken) 90px, var(--color-line) 180px);
   background-size: 480px 100%;
   animation: shimmer 1.3s linear infinite;
 }
@@ -157,5 +152,87 @@ mark.hl {
   .slide-from-right,
   .grow {
     animation-name: fade-in;
+  }
+}
+
+/* ---------- Лендинг и вход ---------- */
+
+/* Появление секций при прокрутке. В слое components, чтобы hover-утилиты оставались сильнее */
+@layer components {
+  .reveal {
+    opacity: 0;
+    translate: 0 18px;
+    transition:
+      opacity 0.7s ease-out,
+      translate 0.7s cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+
+  .reveal.is-shown {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+/* Сетка точек и бирюзовое свечение за первым экраном */
+.dot-grid {
+  background-image: radial-gradient(circle, #c5d6d3 1px, transparent 1.2px);
+  background-size: 22px 22px;
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 30%, #000 30%, transparent 75%);
+}
+
+.hero-glow {
+  background:
+    radial-gradient(40% 50% at 70% 40%, rgba(13, 148, 136, 0.22), transparent 70%),
+    radial-gradient(30% 40% at 20% 20%, rgba(79, 209, 189, 0.14), transparent 70%);
+}
+
+/* Линия между шагами «Как работает» заполняется, когда блок доезжает до экрана */
+.step-line {
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 1.4s cubic-bezier(0.2, 0.7, 0.2, 1) 0.2s;
+}
+
+.is-shown .step-line {
+  transform: scaleX(1);
+}
+
+/* Мигающий курсор, пока клиент «печатает» вопрос */
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.caret {
+  animation: blink 0.9s steps(1) infinite;
+}
+
+/* Лёгкое парение карточек первого экрана */
+@keyframes float {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  50% {
+    translate: 0 -8px;
+  }
+}
+
+.float-slow {
+  animation: float 7s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal {
+    translate: none !important;
+  }
+
+  .float-slow {
+    animation: none;
+  }
+
+  .step-line {
+    transition: none;
   }
 }

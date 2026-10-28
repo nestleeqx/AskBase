@@ -39,7 +39,9 @@ class BotAnswer(BaseModel):
     # question — вопрос; booking — клиент хочет записаться; operator — просит живого человека
     # Для модели все поля обязательны (строгая схема); значения по умолчанию — для ответов
     # без этих полей, например из тестов
-    intent: Literal["question", "booking", "operator", "smalltalk"] = "question"
+    intent: Literal[
+        "question", "booking", "my_booking", "cancel_booking", "operator", "smalltalk"
+    ] = "question"
     answered: bool = Field(description="true — ответ есть во фрагментах; false — передать вопрос")
     answer: str = Field(description="Ответ клиенту; пустая строка, если answered=false")
     source_ids: list[int] = Field(description="Номера фрагментов, на которых основан ответ")
@@ -79,6 +81,10 @@ ANSWER_SYSTEM = f"""Ты — администратор стоматологич
      записывать другого человека. Чего в последнем сообщении нет — пустая строка, ничего не
      придумывай. Вопрос о записи («как записаться?», «нужна ли предоплата?») — это
      question, на него отвечай по фрагментам;
+   - my_booking — спрашивает о СВОЕЙ записи: «я записан?», «на когда моя запись?»,
+     «подтвердили запись?». Его заявки знает система, а не документы. answered=false;
+   - cancel_booking — просит отменить свою запись: «отмените запись», «не смогу прийти».
+     answered=false;
    - operator — просит живого человека, администратора или перезвонить. answered=false;
    - smalltalk — приветствие, благодарность, «ок», «как дела», проверка связи — реплика без
      вопроса и без просьбы. answered=false, а в answer — одна короткая вежливая фраза без

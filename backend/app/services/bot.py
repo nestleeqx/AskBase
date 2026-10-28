@@ -132,7 +132,15 @@ ASK_TIME = (
 )
 TOO_LONG = "Слишком длинно — напишите, пожалуйста, короче."
 BOOK_CANCELLED = "Хорошо, запись отменена. Если появятся вопросы — пишите."
-NOTHING_TO_CANCEL = "Отменять нечего. Задайте вопрос или выберите кнопку внизу."
+NOTHING_TO_CANCEL = (
+    "Активных записей нет — отменять нечего. Записаться — кнопкой «📅 Записаться» внизу."
+)
+CANCEL_BUTTONS = inline([[("❌ Да, отменить запись", "bk:cancel")], [("Нет, оставить", "bk:stay")]])
+# Сообщение бота в истории диалога, когда клиент попросил отменить запись словами
+CANCEL_ASKED = "Спросил, отменить ли запись."
+BOOKING_CANCELLED_DONE = (
+    "Запись отменена. Если захотите прийти — нажмите «📅 Записаться» или напишите сюда."
+)
 
 
 LINKED = (
@@ -223,15 +231,57 @@ BOOKING_NOTES = {
     "new": "Заявка на запись: ",
     "edited": "Заявка изменена: ",
     "kept": "Запись без изменений: ",
+    "cancelled": "Клиент отменил запись: ",
 }
 BOOKING_CANCELLED_NOTE = "Клиент отменил запись по шагам."
 
 
-def booking_summary(b: Booking, edited: bool = False, kept: bool = False) -> str:
+def booking_summary(
+    b: Booking, edited: bool = False, kept: bool = False, cancelled: bool = False
+) -> str:
     """Заявка одной строкой — сообщение в истории диалога для администратора."""
     parts = [b.name, b.phone, *([b.reason] if b.reason else []), f"удобно: {b.preferred_time}"]
-    kind = "kept" if kept else "edited" if edited else "new"
+    kind = "cancelled" if cancelled else "kept" if kept else "edited" if edited else "new"
     return BOOKING_NOTES[kind] + ", ".join(parts)
+
+
+# Сколько дней «Я записан?» помнит прошлые заявки
+STATUS_DAYS = 30
+
+
+async def _latest_booking(session: AsyncSession, conversation_id: str) -> Booking | None:
+    since = now() - timedelta(days=STATUS_DAYS)
+    return await session.scalar(
+        select(Booking)
+        .where(Booking.conversation_id == conversation_id, Booking.created_at >= since)
+        .order_by(Booking.created_at.desc())
+        .limit(1)
+    )
+
+
+def booking_status_text(b: Booking | None) -> str:
+    """Ответ на «Я записан?» — обычным текстом: он же сохраняется в истории диалога."""
+    if b is None:
+        return "Заявок на запись от вас пока нет. Записаться — кнопкой «📅 Записаться» внизу."
+    lines = [f"Имя: {b.name}", f"Телефон: {b.phone}"]
+    if b.reason:
+        lines.append(f"Повод: {b.reason}")
+    lines.append(f"Удобное время: {b.preferred_time}")
+    details = "\n".join(lines)
+    if b.status == "confirmed":
+        return (
+            f"Да, вы записаны — администратор подтвердил запись:\n\n{details}\n\n"
+            "Ждём вас в клинике! Если планы изменятся — отправьте /cancel или напишите сюда."
+        )
+    if b.status == "new":
+        return (
+            f"Ваша заявка на запись принята, администратор ещё не звонил:\n\n{details}\n\n"
+            "Он позвонит в рабочее время и подтвердит время визита."
+        )
+    return (
+        f"Ваша последняя запись отменена:\n\n{details}\n\n"
+        "Записаться снова — кнопкой «📅 Записаться» внизу."
+    )
 
 
 def reply_html(text: str, sources: list[dict] | None, title: str | None = None) -> str:
@@ -303,7 +353,13 @@ class Bot:
             state = await booking.get_state(self.redis, chat_id)
             await booking.clear_state(self.redis, chat_id)
             if state is None:
-                await self.tg.send(chat_id, NOTHING_TO_CANCEL, MENU)
+                # Записи по шагам нет — значит, клиент хочет отменить уже оформленную запись
+                await self._ask_cancel(chat_id)
+            elif state.get("step") == "confirm_cancel":
+                await self._remove_buttons(chat_id, state.get("message_id"))
+                await self.tg.send(
+                    chat_id, BOOK_KEPT.get(state.get("status"), BOOK_KEPT["new"]), MENU
+                )
             elif state.get("step") == "choose":
                 # «Отмена» вместо ответа на «У вас уже есть запись» — запись остаётся как есть
                 await self._remove_buttons(chat_id, state.get("message_id"))
@@ -317,9 +373,9 @@ class Bot:
             return
 
         state = await booking.get_state(self.redis, chat_id)
-        if state is not None and state.get("step") == "choose":
-            # Вместо ответа на «У вас уже есть запись» клиент нажал меню или написал другое —
-            # оставляем запись как есть и делаем то, о чём он просит сейчас
+        if state is not None and state.get("step") in {"choose", "confirm_cancel"}:
+            # Вместо ответа на «У вас уже есть запись» или «Отменить запись?» клиент нажал меню
+            # или написал другое — оставляем запись как есть и делаем то, о чём он просит сейчас
             await self._leave_choice(chat_id, state)
             state = None
         if state is not None:
@@ -446,6 +502,11 @@ class Bot:
                 # то, что бот сделал на самом деле
                 if result.intent == "booking":
                     reply.text = BOOK_FROM_TEXT
+                elif result.intent == "my_booking":
+                    # «Я записан?» — ответ из заявок клиента, а не из документов
+                    reply.text = booking_status_text(await _latest_booking(session, conv.id))
+                elif result.intent == "cancel_booking":
+                    reply.text = CANCEL_ASKED
                 elif result.intent == "operator":
                     profile = await profile_for(session, conv.visitor_id)
                     reply.text, reply.reason = _operator_text(profile), "operator"
@@ -458,6 +519,12 @@ class Bot:
 
         if result.intent == "booking":
             await self._booking_start(chat, sender or {}, result.draft)
+            return
+        if result.intent == "my_booking":
+            await self.tg.send(chat_id, escape(reply.text), MENU)
+            return
+        if result.intent == "cancel_booking":
+            await self._ask_cancel(chat_id)
             return
         if result.intent == "operator":
             await self.tg.send(chat_id, reply.text, MENU)
@@ -510,6 +577,9 @@ class Bot:
             return
         if kind == "bk" and key in {"edit", "new", "keep"}:
             await self._booking_choice(query, chat, key)
+            return
+        if kind == "bk" and key in {"cancel", "stay"}:
+            await self._cancel_choice(query, chat, key)
             return
         if kind != "price":
             return
@@ -657,7 +727,55 @@ class Bot:
         """Клиент не стал выбирать, что делать с прежней записью, — она остаётся как есть."""
         await booking.clear_state(self.redis, chat_id)
         await self._remove_buttons(chat_id, state.get("message_id"))
-        await self._note_kept(chat_id, state)
+        if state.get("step") == "choose":
+            await self._note_kept(chat_id, state)
+
+    async def _ask_cancel(self, chat_id: int) -> None:
+        """«Отменить запись?» с кнопками — по /cancel или по просьбе словами."""
+        existing = await self._open_booking(chat_id)
+        if existing is None:
+            await self.tg.send(chat_id, NOTHING_TO_CANCEL, MENU)
+            return
+        sent = await self.tg.send(
+            chat_id, f"Отменить запись?\n\n{_booking_lines(existing)}", CANCEL_BUTTONS
+        )
+        await booking.save_state(
+            self.redis,
+            chat_id,
+            {
+                "step": "confirm_cancel",
+                "booking_id": existing.id,
+                "status": existing.status,
+                "message_id": sent.get("message_id"),
+            },
+        )
+
+    async def _cancel_choice(self, query: dict[str, Any], chat: dict[str, Any], key: str) -> None:
+        chat_id = chat["id"]
+        state = await booking.get_state(self.redis, chat_id)
+        if not state or state.get("step") != "confirm_cancel":
+            return
+        await booking.clear_state(self.redis, chat_id)
+        await self._remove_buttons(chat_id, (query.get("message") or {}).get("message_id"))
+        if key == "stay":
+            await self.tg.send(chat_id, BOOK_KEPT.get(state.get("status"), BOOK_KEPT["new"]), MENU)
+            return
+        async with self.sessions() as session:
+            b = await session.get(Booking, state["booking_id"])
+            # Администратор мог отменить её раньше — тогда отменять уже нечего
+            if b is None or b.status == "cancelled":
+                await self.tg.send(chat_id, NOTHING_TO_CANCEL, MENU)
+                return
+            b.status = "cancelled"
+            await session.commit()
+            conv_id = b.conversation_id
+        await self._note(chat_id, booking_summary(b, cancelled=True))
+        await self.tg.send(chat_id, BOOKING_CANCELLED_DONE, MENU)
+        await notify_manager(
+            self.tg,
+            f"❌ <b>Клиент отменил запись</b>\n{_client(chat)}\n\n{_booking_lines(b)}",
+            conv_id,
+        )
 
     async def _booking_choice(self, query: dict[str, Any], chat: dict[str, Any], key: str) -> None:
         """Кнопки под «У вас уже есть заявка»: изменить её, записать ещё одного или оставить."""
