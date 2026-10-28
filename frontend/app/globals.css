@@ -1,0 +1,161 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: var(--font-onest);
+}
+
+/* Палитра AskBase: бирюза — свежий «медицинский» акцент, отдельно от синего LeadSort и лайма CardForge */
+@theme {
+  --color-canvas: #f3f6f6;
+  --color-surface: #ffffff;
+  --color-sunken: #eef3f2;
+  --color-line: #e1e8e7;
+  --color-line-strong: #cbd8d6;
+
+  --color-ink: #10201f;
+  --color-ink-2: #465755;
+  --color-ink-3: #869593;
+
+  /* glow — светлая подсветка: выделение текста, найденные слова */
+  --color-accent: #0d9488;
+  --color-accent-hover: #0f766e;
+  --color-accent-soft: #e3f5f2;
+  --color-accent-ink: #134e4a;
+  --color-glow: #b9ece3;
+  --color-glow-strong: #4fd1bd;
+
+  --color-success: #16a34a;
+  --color-success-soft: #e7f6ec;
+  --color-warn: #a45a07;
+  --color-warn-soft: #fcf1df;
+  --color-danger: #c2362b;
+  --color-danger-soft: #fdecea;
+  /* Фиолетовый — второй цвет: совпадение по словам рядом с бирюзовым «по смыслу» */
+  --color-info: #6d4ae0;
+  --color-info-soft: #f1ecff;
+}
+
+:root {
+  color-scheme: light;
+}
+
+html {
+  scrollbar-gutter: stable;
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-feature-settings: "ss01", "cv11";
+}
+
+::selection {
+  background: var(--color-accent-soft);
+  color: var(--color-accent-ink);
+}
+
+.scrollbar-none {
+  scrollbar-width: none;
+}
+
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line-strong) transparent;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: -240px 0;
+  }
+  to {
+    background-position: 240px 0;
+  }
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--color-line) 0px,
+    var(--color-sunken) 90px,
+    var(--color-line) 180px
+  );
+  background-size: 480px 100%;
+  animation: shimmer 1.3s linear infinite;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+.rise {
+  animation: rise 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes slide-from-right {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+}
+
+.pop {
+  animation: pop 0.2s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+.fade-in {
+  animation: fade-in 0.2s ease-out both;
+}
+
+.slide-from-right {
+  animation: slide-from-right 0.25s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+/* Слова вопроса во фрагментах, которые нашёл поиск */
+mark.hl {
+  background-color: var(--color-accent-soft);
+  color: var(--color-accent-ink);
+  border-radius: 3px;
+  box-shadow: inset 0 -2px 0 var(--color-glow-strong);
+  padding: 0 1px;
+}
+
+/* Полоса «близость по смыслу» заполняется при появлении результата */
+@keyframes grow {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+.grow {
+  transform-origin: left;
+  animation: grow 0.6s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rise,
+  .pop,
+  .slide-from-right,
+  .grow {
+    animation-name: fade-in;
+  }
+}

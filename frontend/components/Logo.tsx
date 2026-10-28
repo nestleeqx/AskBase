@@ -1,0 +1,24 @@
+/** Знак AskBase: вопрос клиента в облачке, строки — документ, из которого ответ. Тот же рисунок — в app/icon.svg. */
+export function LogoMark({ className = "size-7" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 32 32" className={className} aria-hidden>
+      <rect width="32" height="32" rx="9" fill="#0d9488" />
+      <path
+        d="M7.5 10.5A3.5 3.5 0 0 1 11 7h10a3.5 3.5 0 0 1 3.5 3.5v6.5a3.5 3.5 0 0 1-3.5 3.5h-6.6l-4.3 3.5c-.6.5-1.6.1-1.6-.7v-2.9a3.5 3.5 0 0 1-1-2.4z"
+        fill="#ffffff"
+      />
+      <rect x="11" y="10.8" width="10" height="2.4" rx="1.2" fill="#0d9488" />
+      <rect x="11" y="14.8" width="6" height="2.4" rx="1.2" fill="#0d9488" opacity=".55" />
+      <path d="M25 19.2Q25.4 23.6 29.6 24Q25.4 24.4 25 28.8Q24.6 24.4 20.4 24Q24.6 23.6 25 19.2Z" fill="#b9ece3" />
+    </svg>
+  );
+}
+
+export function Logo() {
+  return (
+    <span className="flex items-center gap-2 text-[15px] font-semibold tracking-tight text-ink">
+      <LogoMark />
+      AskBase
+    </span>
+  );
+}

@@ -2,7 +2,7 @@
 
 prajs-list.md      → docs/prajs-list.pdf       (PDF через Chromium)
 vrachi-i-grafik.md → docs/vrachi-i-grafik.docx (DOCX через python-docx)
-pravila-zapisi.md  → docs/pravila-zapisi.html  (страница сайта клиники)
+pravila-zapisi.md  → docs/pravila-zapisi.html  (страница сайта клиники, копия — во frontend/public)
 
 faq.txt пишется руками и лежит в docs/ сразу. Скрипт нужен, только если правите тексты:
 
@@ -16,6 +16,8 @@ from pathlib import Path
 
 SEED = Path(__file__).resolve().parents[1] / "app" / "seed"
 SOURCE, DOCS = SEED / "source", SEED / "docs"
+# Сайт клиники отдаёт ту же страницу: на неё ведёт ссылка «Страница» у документа в админке
+SITE_PAGE = Path(__file__).resolve().parents[2] / "frontend/public/clinic/pravila-zapisi.html"
 
 CLINIC = "Белая линия"
 CONTACTS = "Екатеринбург, ул. Светлая, 18 · +7 (343) 200-18-18"
@@ -219,6 +221,8 @@ def build_page(blocks: list[tuple[str, object]], path: Path) -> None:
 </html>
 """
     path.write_text(html, encoding="utf-8")
+    SITE_PAGE.parent.mkdir(parents=True, exist_ok=True)
+    SITE_PAGE.write_text(html, encoding="utf-8")
 
 
 def main() -> None:
