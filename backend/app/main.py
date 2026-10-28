@@ -6,7 +6,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from app.api import chat, dialogs, documents, misc, search, telegram
+from app.api import (
+    analytics,
+    chat,
+    dialogs,
+    documents,
+    misc,
+    search,
+    settings,
+    telegram,
+    unanswered,
+)
 from app.config import get_settings
 from app.db import SessionLocal, init_db
 from app.embeddings import create_embedder
@@ -88,3 +98,6 @@ app.include_router(search.router)
 app.include_router(chat.router)
 app.include_router(dialogs.router)
 app.include_router(telegram.router)
+app.include_router(unanswered.router)
+app.include_router(analytics.router)
+app.include_router(settings.router)

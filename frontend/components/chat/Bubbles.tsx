@@ -153,18 +153,28 @@ export function BotBubble({
   );
 }
 
+// Сообщения бота о записи: начало строки — что произошло (см. BOOKING_NOTES в bot.py)
+const BOOKING_NOTES: [prefix: string, title: string, done: boolean][] = [
+  ["Заявка на запись:", "Бот принял заявку на запись", true],
+  ["Заявка изменена:", "Клиент изменил заявку на запись", true],
+  ["Запись без изменений:", "Клиент оставил запись как есть", false],
+  ["Клиент отменил запись по шагам.", "Клиент отменил запись по шагам", false],
+];
+
 function BookingNote({ message, side }: { message: ChatMessage; side: Side }) {
-  const edited = message.text.startsWith("Заявка изменена:");
-  const text = message.text.replace(/^Заявка (на запись|изменена):\s*/, "");
+  const [prefix, title, done] = BOOKING_NOTES.find(([p]) => message.text.startsWith(p)) ?? BOOKING_NOTES[0];
+  const text = message.text.startsWith(prefix) ? message.text.slice(prefix.length).trim() : message.text;
   return (
     <div className={`rise flex max-w-[92%] flex-col sm:max-w-[80%] ${WRAP[side]}`}>
-      <div className="flex items-start gap-2.5 rounded-2xl border border-success/25 bg-success-soft px-4 py-3 text-sm">
-        <CalendarCheck className="mt-0.5 size-4 shrink-0 text-success" />
+      <div
+        className={`flex items-start gap-2.5 rounded-2xl border px-4 py-3 text-sm ${
+          done ? "border-success/25 bg-success-soft" : "border-line bg-sunken"
+        }`}
+      >
+        <CalendarCheck className={`mt-0.5 size-4 shrink-0 ${done ? "text-success" : "text-ink-3"}`} />
         <div>
-          <p className="font-medium text-ink">
-            {edited ? "Клиент изменил заявку на запись" : "Бот принял заявку на запись"}
-          </p>
-          <p className="mt-0.5 leading-relaxed text-ink-2">{text}</p>
+          <p className="font-medium text-ink">{title}</p>
+          {text && <p className="mt-0.5 leading-relaxed text-ink-2">{text}</p>}
         </div>
       </div>
       <p className="mt-1 px-1 text-xs text-ink-3">{formatTime(message.created_at)}</p>

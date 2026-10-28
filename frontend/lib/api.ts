@@ -1,5 +1,8 @@
 import type {
+  Analytics,
   Booking,
+  BotSettings,
+  BotSettingsValues,
   BookingList,
   BookingStatus,
   ChatReply,
@@ -11,6 +14,8 @@ import type {
   DocumentList,
   SearchResult,
   TelegramStatus,
+  UnansweredItem,
+  UnansweredList,
 } from "./types";
 
 export const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
@@ -114,4 +119,16 @@ export const api = {
 
   telegram: () => request<TelegramStatus>("/api/telegram"),
   telegramLink: () => request<{ url: string }>("/api/telegram/link", json("POST")),
+
+  unanswered: (status: "open" | "resolved") => request<UnansweredList>(`/api/unanswered?status=${status}`),
+  resolve: (id: number, resolved: boolean) =>
+    request<UnansweredItem>(`/api/unanswered/${id}/resolve`, json("POST", { resolved })),
+  answerToBase: (id: number, question: string, answer: string) =>
+    request<UnansweredItem>(`/api/unanswered/${id}/answer`, json("POST", { question, answer })),
+
+  analytics: () => request<Analytics>("/api/analytics"),
+
+  settings: () => request<BotSettings>("/api/settings"),
+  saveSettings: (values: BotSettingsValues) => request<BotSettings>("/api/settings", json("PUT", values)),
+  resetSettings: () => request<BotSettings>("/api/settings", json("DELETE")),
 };

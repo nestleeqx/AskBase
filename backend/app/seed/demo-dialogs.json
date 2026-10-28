@@ -5,7 +5,7 @@
    "key": "marina",
    "title": "Марина Королёва",
    "username": "marina_kor",
-   "hours_ago": 52,
+   "hours_ago": 140,
    "messages": [
     {
      "role": "user",
@@ -362,7 +362,7 @@
    "key": "dmitry",
    "title": "Дмитрий Орлов",
    "username": null,
-   "hours_ago": 30,
+   "hours_ago": 112,
    "messages": [
     {
      "role": "user",
@@ -703,7 +703,7 @@
    "key": "olga",
    "title": "Ольга Смирнова",
    "username": "olga_smirnova",
-   "hours_ago": 26,
+   "hours_ago": 86,
    "messages": [
     {
      "role": "user",
@@ -1065,7 +1065,7 @@
    "key": "igor",
    "title": "Игорь Васильев",
    "username": "igor_v",
-   "hours_ago": 20,
+   "hours_ago": 64,
    "messages": [
     {
      "role": "user",
@@ -1192,7 +1192,7 @@
    "key": "sergey",
    "title": "Сергей Павлов",
    "username": "spavlov",
-   "hours_ago": 8,
+   "hours_ago": 30,
    "messages": [
     {
      "role": "user",
@@ -1419,7 +1419,7 @@
    "key": "vika",
    "title": "Виктория",
    "username": "vika_m",
-   "hours_ago": 5,
+   "hours_ago": 20,
    "messages": [
     {
      "role": "user",

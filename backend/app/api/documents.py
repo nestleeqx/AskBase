@@ -2,15 +2,16 @@ import time
 
 from fastapi import APIRouter, HTTPException, UploadFile
 from fastapi.responses import FileResponse
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, or_, select
 
 from app.config import get_settings
 from app.deps import EmbedderDep, IpDep, RedisDep, SessionDep, VisitorDep
-from app.models import Chunk, Document
+from app.models import Chunk, Document, KbAnswer
 from app.schemas import ChunkOut, DocumentChunks, DocumentList, DocumentOut, UploadLimits, UrlIn
 from app.services.extract import Extracted, ExtractError, extract_file, kind_of
 from app.services.fetch import fetch_page
 from app.services.indexing import ingest
+from app.services.kb_answers import ANSWERS_FILE, not_answers_doc
 from app.services.redis_store import hit_limit
 from app.services.seed import SEED_BY_KEY
 
@@ -46,7 +47,9 @@ def to_out(doc: Document, visitor: str) -> DocumentOut:
 
 async def _own_count(session: SessionDep, visitor: str) -> int:
     return await session.scalar(
-        select(func.count()).select_from(Document).where(Document.visitor_id == visitor)
+        select(func.count())
+        .select_from(Document)
+        .where(Document.visitor_id == visitor, not_answers_doc())
     )
 
 
@@ -207,5 +210,8 @@ async def delete_document(doc_id: str, session: SessionDep, visitor: VisitorDep)
     doc = await _visible(session, doc_id, visitor)
     if doc.visitor_id != visitor:
         raise HTTPException(403, "Документы клиники — общая база демо, их удалить нельзя.")
+    if doc.filename == ANSWERS_FILE:
+        # Удалили документ с ответами — ответы администратора больше не нужны
+        await session.execute(delete(KbAnswer).where(KbAnswer.visitor_id == visitor))
     await session.delete(doc)
     await session.commit()

@@ -142,3 +142,48 @@ export type TelegramStatus = {
   /** Уведомления менеджеру настроены */
   manager: boolean;
 };
+
+export type UnansweredItem = {
+  id: number;
+  question: string;
+  reason: string;
+  reason_label: string;
+  channel: "telegram" | "test";
+  conversation_id: string;
+  client: string;
+  created_at: string;
+  demo: boolean;
+  resolved: boolean;
+  /** Ответ администратора, добавленный в базу знаний */
+  kb_answer: string | null;
+};
+
+export type UnansweredList = { items: UnansweredItem[]; open: number; resolved: number };
+
+export type Tone = "neutral" | "friendly" | "formal" | "brief";
+
+export type BotSettingsValues = { greeting: string; tone: Tone; phone: string; hours: string };
+
+export type BotSettings = BotSettingsValues & {
+  /** Свои настройки гостя, а не общие настройки клиники */
+  custom: boolean;
+  defaults: BotSettingsValues;
+  tones: Record<Tone, string>;
+};
+
+export type AnalyticsDay = { date: string; dialogs: number; questions: number; answered: number };
+
+export type Analytics = {
+  days: AnalyticsDay[];
+  dialogs: number;
+  questions: number;
+  answered: number;
+  /** Доля вопросов, на которые бот ответил сам: 0..1 */
+  answered_share: number | null;
+  median_ms: number | null;
+  bookings: number;
+  operator_requests: number;
+  unanswered: number;
+  topics: { topic: string; label: string; count: number }[];
+  timezone: string;
+};

@@ -32,6 +32,7 @@ async def get_session() -> AsyncIterator[AsyncSession]:
 MIGRATIONS = [
     "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS waiting_since TIMESTAMPTZ",
     "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS operator_until TIMESTAMPTZ",
+    "ALTER TABLE messages ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ",
 ]
 
 

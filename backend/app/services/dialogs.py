@@ -8,7 +8,8 @@ from app.config import get_settings
 from app.embeddings import EmbeddingProvider
 from app.llm import LLMProvider
 from app.models import Conversation, Message, now
-from app.services.answer import REASONS, AnswerResult, answer_question
+from app.services.answer import REASONS, AnswerResult, answer_question, booking_hint
+from app.services.profile import profile_for
 
 
 async def recent_history(session: AsyncSession, conversation_id: str) -> list[tuple[str, str]]:
@@ -67,7 +68,12 @@ async def ask(
     одинаковый для всех и берётся из кеша.
     """
     history = await recent_history(session, conversation.id) if use_history else []
-    result = await answer_question(session, llm, embedder, redis, question, history, visitor)
+    profile = await profile_for(session, visitor or None)
+    result = await answer_question(
+        session, llm, embedder, redis, question, history, visitor, profile.tone
+    )
+    if result.intent == "booking":
+        result.text = booking_hint(profile.phone)
 
     user = Message(conversation_id=conversation.id, role="user", text=question)
     bot = Message(

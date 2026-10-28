@@ -31,6 +31,9 @@ docker compose up -d --build
 - http://localhost:3000/admin/dialogs — диалоги клиентов с ботом в Telegram и ответ администратора
 - http://localhost:3000/admin/bookings — заявки на запись, которые собрал бот
 - http://localhost:3000/admin/chat — тестовый чат с ботом и разбор каждого ответа
+- http://localhost:3000/admin/unanswered — «Бот не смог ответить»: вопросы, которых нет в базе; ответ отсюда попадает в документ «Ответы администратора», и бот начинает отвечать сам
+- http://localhost:3000/admin/analytics — аналитика за неделю: диалоги по дням, доля вопросов с ответом, топ тем
+- http://localhost:3000/admin/settings — настройки бота: приветствие, тон ответов, контакты
 - http://localhost:3000/admin/documents — документы базы знаний, загрузка своих файлов и ссылок
 - http://localhost:3000/admin/search — проверка поиска: какие фрагменты найдутся по вопросу
 - http://localhost:8000/docs — API

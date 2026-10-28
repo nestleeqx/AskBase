@@ -2,6 +2,7 @@
 
 import { MessageSquarePlus, SendHorizontal, Sparkles } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import useSWR from "swr";
 import { api, ApiError } from "@/lib/api";
 import type { ChatMessage } from "@/lib/types";
 import { useToast } from "../Toast";
@@ -45,6 +46,8 @@ export function ChatView() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const toast = useToast();
+  // Приветствие — из настроек бота: гость может поменять его на странице «Настройки бота»
+  const { data: settings } = useSWR("settings", api.settings);
 
   // Диалог продолжается после перезагрузки страницы
   useEffect(() => {
@@ -127,8 +130,8 @@ export function ChatView() {
             <span className="grid size-8 shrink-0 place-items-center rounded-full bg-accent text-white">
               <Sparkles className="size-4" />
             </span>
-            <p className="rounded-2xl rounded-tl-md border border-line bg-surface px-4 py-3 text-sm leading-relaxed text-ink">
-              {GREETING}
+            <p className="rounded-2xl rounded-tl-md border border-line bg-surface px-4 py-3 text-sm leading-relaxed whitespace-pre-line text-ink">
+              {settings?.greeting ?? GREETING}
             </p>
           </div>
           {messages.map((m, i) =>

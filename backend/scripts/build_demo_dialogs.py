@@ -38,7 +38,7 @@ SCENARIOS = [
         "key": "marina",
         "title": "Марина Королёва",
         "username": "marina_kor",
-        "hours_ago": 52,
+        "hours_ago": 140,
         "steps": [
             (0, "q", "Здравствуйте! Сколько стоит имплант под ключ?"),
             (1, "q", "А кто у вас ставит импланты?"),
@@ -60,7 +60,7 @@ SCENARIOS = [
         "key": "dmitry",
         "title": "Дмитрий Орлов",
         "username": None,
-        "hours_ago": 30,
+        "hours_ago": 112,
         "steps": [
             (0, "q", "Можно оплатить лечение в рассрочку?"),
             (1, "q", "А полис ДМС принимаете?"),
@@ -71,7 +71,7 @@ SCENARIOS = [
         "key": "olga",
         "title": "Ольга Смирнова",
         "username": "olga_smirnova",
-        "hours_ago": 26,
+        "hours_ago": 86,
         "steps": [
             (0, "q", "Со скольки лет вы принимаете детей?"),
             (1, "q", "Сколько стоит вылечить молочный зуб?"),
@@ -93,7 +93,7 @@ SCENARIOS = [
         "key": "igor",
         "title": "Игорь Васильев",
         "username": "igor_v",
-        "hours_ago": 20,
+        "hours_ago": 64,
         "steps": [
             (0, "q", "Можно ли у вас лечить зубы под общим наркозом?"),
             (
@@ -116,7 +116,7 @@ SCENARIOS = [
         "key": "sergey",
         "title": "Сергей Павлов",
         "username": "spavlov",
-        "hours_ago": 8,
+        "hours_ago": 30,
         "steps": [
             (0, "q", "Сколько стоит отбеливание ZOOM?"),
             (1, "q", "А кофе потом пить можно?"),
@@ -126,7 +126,7 @@ SCENARIOS = [
         "key": "vika",
         "title": "Виктория",
         "username": "vika_m",
-        "hours_ago": 5,
+        "hours_ago": 20,
         "steps": [
             (0, "q", "Вы работаете в воскресенье?"),
             (1, "q", "Где у вас можно припарковаться?"),

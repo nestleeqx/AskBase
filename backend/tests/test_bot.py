@@ -345,9 +345,6 @@ async def test_open_booking_asks_what_to_do(bot):
     buttons = bot.tg.of("sendMessage")[-1]["reply_markup"]["inline_keyboard"]
     assert [row[0]["callback_data"] for row in buttons] == ["bk:edit", "bk:new", "bk:keep"]
 
-    # Пока клиент не выбрал, текст не начинает запись
-    assert await say(bot, "Анна") == botmod.CHOOSE
-
     await bot.handle(button("bk:keep"))
     assert bot.tg.texts()[-1] == botmod.BOOK_KEPT["new"]
     # Кнопки под вопросом убраны — второе нажатие ничего не делает
@@ -356,6 +353,51 @@ async def test_open_booking_asks_what_to_do(bot):
     await bot.handle(button("bk:edit"))
     assert len(bot.tg.texts()) == sent
     assert len(await bookings_of_chat()) == 1
+    # В истории диалога администратор видит, чем кончилось
+    assert (await chat_messages())[-1].text.startswith("Запись без изменений: Анна")
+
+
+async def test_menu_button_leaves_booking_choice(bot):
+    await book(bot, "Анна", "+7 900 123-45-67", "Чистка", "Утром")
+    await say(bot, botmod.BOOK)
+    choice_id = bot.tg._message_id
+    # Вместо выбора клиент нажал «Цены» — бот показывает цены, а не «выберите вариант»
+    assert await say(bot, botmod.PRICES) == botmod.PRICES_TEXT
+    removed = bot.tg.of("editMessageReplyMarkup")[-1]
+    assert removed["message_id"] == choice_id
+    assert (await chat_messages())[-1].text.startswith("Запись без изменений: Анна")
+    # Запись по шагам не продолжается: следующий текст — обычный вопрос
+    assert "Источник" in await say(bot, "Сколько стоит удаление зуба мудрости?")
+
+
+async def test_cancel_booking_is_noted(bot):
+    await say(bot, "Хочу записаться к врачу")
+    await say(bot, "Анна")
+    assert await say(bot, botmod.CANCEL) == botmod.BOOK_CANCELLED
+    assert (await chat_messages())[-1].text == botmod.BOOKING_CANCELLED_NOTE
+
+
+async def test_smalltalk_is_not_handed_off(bot):
+    reply = await say(bot, "Привет!")
+    assert reply.startswith("Здравствуйте! Чем могу помочь?")
+    await say(bot, "тест")
+    msgs = await chat_messages()
+    assert [m.reason for m in msgs if m.role == "bot"] == ["smalltalk", "smalltalk"]
+    assert all(m.answered is None for m in msgs if m.role == "bot")
+    # «Спасибо» после записи — не новая запись и не вопрос администратору
+    await book(bot, "Анна", "+7 900 123-45-67", "Чистка", "Утром")
+    assert (await say(bot, "Спасибо большое")).startswith("Пожалуйста!")
+
+
+def test_smalltalk_reply():
+    from app.services.answer import smalltalk_reply
+
+    assert smalltalk_reply("Добрый день!").startswith("Здравствуйте")
+    assert smalltalk_reply("хорошо, спасибо").startswith("Пожалуйста")
+    assert smalltalk_reply("всего доброго").startswith("Всего доброго")
+    assert smalltalk_reply("ок").startswith("Хорошо")
+    assert smalltalk_reply("привет, сколько стоит чистка?") is None
+    assert smalltalk_reply("Здравствуйте, хочу записаться") is None
 
 
 async def test_edit_open_booking(bot):

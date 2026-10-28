@@ -3,12 +3,15 @@
 import {
   ArrowUpRight,
   CalendarCheck,
+  ChartColumn,
+  CircleHelp,
   FileStack,
   Globe,
   Inbox,
   Menu,
   MessagesSquare,
   SearchCheck,
+  Settings2,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -74,6 +77,10 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   // Бейджи: сколько клиентов ждут администратора и сколько заявок ждут звонка
   const { data: dialogs } = useSWR(["dialogs", "", false], () => api.dialogs(), { refreshInterval: 10000 });
   const { data: bookings } = useSWR("bookings", api.bookings, { refreshInterval: 10000 });
+  // Тот же ключ, что у вкладки «Нерешённые», — после ответа в базу бейдж обновится сам
+  const { data: unanswered } = useSWR(["unanswered", "open"], () => api.unanswered("open"), {
+    refreshInterval: 10000,
+  });
   const bot: Item[] = [
     { href: "/admin/dialogs", label: "Диалоги", icon: <Inbox className="size-4" />, badge: dialogs?.waiting },
     {
@@ -84,12 +91,19 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
     },
     { href: "/admin/chat", label: "Тестовый чат", icon: <MessagesSquare className="size-4" /> },
   ];
-  const site: Item = {
-    href: CLINIC_RULES_PATH,
-    label: "Сайт клиники",
-    icon: <Globe className="size-4" />,
-    external: true,
-  };
+  const insights: Item[] = [
+    {
+      href: "/admin/unanswered",
+      label: "Бот не смог ответить",
+      icon: <CircleHelp className="size-4" />,
+      badge: unanswered?.open,
+    },
+    { href: "/admin/analytics", label: "Аналитика", icon: <ChartColumn className="size-4" /> },
+  ];
+  const clinic: Item[] = [
+    { href: "/admin/settings", label: "Настройки бота", icon: <Settings2 className="size-4" /> },
+    { href: CLINIC_RULES_PATH, label: "Сайт клиники", icon: <Globe className="size-4" />, external: true },
+  ];
 
   return (
     <div className="flex h-full flex-col">
@@ -116,8 +130,20 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           </div>
         </div>
         <div>
+          <p className="mb-1.5 px-2.5 text-[11px] font-medium text-ink-3">Качество ответов</p>
+          <div className="space-y-0.5">
+            {insights.map((item) => (
+              <NavItem key={item.href} item={item} onNavigate={onNavigate} />
+            ))}
+          </div>
+        </div>
+        <div>
           <p className="mb-1.5 px-2.5 text-[11px] font-medium text-ink-3">Клиника</p>
-          <NavItem item={site} onNavigate={onNavigate} />
+          <div className="space-y-0.5">
+            {clinic.map((item) => (
+              <NavItem key={item.href} item={item} onNavigate={onNavigate} />
+            ))}
+          </div>
         </div>
       </nav>
       <div className="p-3">

@@ -28,7 +28,8 @@ log = logging.getLogger(__name__)
 
 DEMO_FILE = Path(__file__).resolve().parents[1] / "seed" / "demo-dialogs.json"
 # Увеличьте, если поменялся demo-dialogs.json, — диалоги пересоздадутся при следующем запуске
-VERSION = 1
+VERSION = 2
+REFRESH_HOURS = 24
 
 
 def _id(key: str) -> str:
@@ -41,9 +42,15 @@ async def ensure_demo_dialogs(sessions: async_sessionmaker) -> None:
     data = json.loads(DEMO_FILE.read_text(encoding="utf-8"))
     dialogs = data["dialogs"]
     async with sessions() as session:
-        if not dialogs or await session.get(Conversation, _id(dialogs[0]["key"])):
+        if not dialogs:
             return
-        # Прежняя версия демо-диалогов — удаляем вместе с сообщениями и заявками
+        first = await session.get(Conversation, _id(dialogs[0]["key"]))
+        # Демо-диалоги на месте и не устарели. Раз в сутки они пересоздаются — иначе
+        # «вчера» в списке и аналитика за неделю со временем опустели бы
+        fresh_since = now() - timedelta(hours=dialogs[0]["hours_ago"] + REFRESH_HOURS)
+        if first is not None and first.created_at > fresh_since:
+            return
+        # Прежняя или устаревшая версия демо-диалогов — удаляем вместе с сообщениями и заявками
         await session.execute(delete(Conversation).where(Conversation.visitor_id == DEMO_VISITOR))
         doc_ids = {
             d.seed_key: d.id

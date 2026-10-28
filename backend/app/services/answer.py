@@ -9,6 +9,7 @@
 """
 
 import logging
+import re
 import time
 from dataclasses import dataclass, field
 
@@ -19,11 +20,11 @@ from app.config import get_settings
 from app.embeddings import EmbeddingError, EmbeddingProvider
 from app.llm import LLMError, LLMProvider
 from app.services.prompts import (
-    ANSWER_SYSTEM,
     CONDENSE_SYSTEM,
     BotAnswer,
     CondensedQuestion,
     answer_prompt,
+    answer_system,
     condense_prompt,
 )
 from app.services.redis_store import cached_complete
@@ -46,6 +47,7 @@ REASONS = {
     "error": "Сервис ответов был недоступен",
     "booking_intent": "Клиент хочет записаться — бот начал запись по шагам",
     "operator_intent": "Клиент попросил администратора",
+    "smalltalk": "Приветствие или реплика без вопроса — бот ответил сам",
 }
 # Тексты для тестового чата: в Telegram вместо них запускается запись по шагам
 # или передача администратору
@@ -59,10 +61,100 @@ class Source:
     kind: str
 
 
-def booking_hint() -> str:
+# Реплики без вопроса: (вид, слова, ответ). Порядок важен: «всего доброго» — прощание,
+# а не приветствие, «хорошо, спасибо» — благодарность
+SMALLTALK = [
+    (
+        "greeting",
+        {
+            "привет",
+            "приветствую",
+            "здравствуйте",
+            "здравствуй",
+            "здрасте",
+            "добрый",
+            "доброе",
+            "день",
+            "вечер",
+            "утро",
+            "hi",
+            "hello",
+            "хай",
+            "салют",
+            "алло",
+        },
+        "Здравствуйте! Чем могу помочь? Спросите о ценах, врачах, подготовке к процедурам "
+        "или записи.",
+    ),
+    (
+        "thanks",
+        {"спасибо", "благодарю", "спс", "спасибки"},
+        "Пожалуйста! Если появятся вопросы — пишите.",
+    ),
+    ("bye", {"пока", "свидания", "всего"}, "Всего доброго! Будем рады видеть вас в клинике."),
+    (
+        "test",
+        {"тест", "test", "проверка"},
+        "Я на связи! Задайте вопрос о клинике — отвечу по документам.",
+    ),
+    (
+        "ok",
+        {
+            "ок",
+            "окей",
+            "ok",
+            "хорошо",
+            "понятно",
+            "ясно",
+            "ладно",
+            "угу",
+            "ага",
+            "понял",
+            "поняла",
+            "отлично",
+            "супер",
+        },
+        "Хорошо! Если появятся вопросы — пишите.",
+    ),
+]
+# Слова, которые не меняют смысла реплики: «спасибо большое», «привет, бот»
+_FILLER = {
+    "а",
+    "ну",
+    "и",
+    "вам",
+    "всем",
+    "вас",
+    "большое",
+    "огромное",
+    "бот",
+    "еще",
+    "до",
+    "связи",
+    "доброго",
+    "дня",
+}
+_SMALLTALK_WORDS = set().union(*(words for _, words, _ in SMALLTALK)) | _FILLER
+_PRIORITY = ["thanks", "bye", "greeting", "test", "ok"]
+
+
+def smalltalk_reply(text: str) -> str | None:
+    """Ответ на «привет», «спасибо», «ок», «тест» — или None, если в сообщении есть вопрос."""
+    words = re.findall(r"[a-zа-я]+", text.lower().replace("ё", "е"))
+    if not words or len(words) > 5 or any(w not in _SMALLTALK_WORDS for w in words):
+        return None
+    replies = {kind: (vocab, reply) for kind, vocab, reply in SMALLTALK}
+    for kind in _PRIORITY:
+        vocab, reply = replies[kind]
+        if any(w in vocab for w in words):
+            return reply
+    return None
+
+
+def booking_hint(phone: str | None = None) -> str:
     return (
         "Чтобы записаться, нажмите «📅 Записаться» в Telegram-боте клиники — он спросит имя, "
-        f"телефон и удобное время. Или позвоните: {get_settings().clinic_phone}."
+        f"телефон и удобное время. Или позвоните: {phone or get_settings().clinic_phone}."
     )
 
 
@@ -107,12 +199,29 @@ async def answer_question(
     question: str,
     history: list[tuple[str, str]],
     visitor: str,
+    tone: str = "neutral",
 ) -> AnswerResult:
-    """history — последние сообщения диалога: пары (user | bot | operator, текст)."""
+    """history — последние сообщения диалога: пары (user | bot | operator, текст).
+    tone — тон ответов из настроек бота (TONES)."""
     settings = get_settings()
     started = time.perf_counter()
     llm_ms = 0
     cached = True
+
+    # «Привет», «спасибо», «тест» — не вопрос: отвечаем сразу, без поиска и нейросети.
+    # Иначе бот передал бы «привет» администратору, а с историей принял бы за продолжение записи
+    canned = smalltalk_reply(question)
+    if canned:
+        return AnswerResult(
+            answered=None,
+            text=canned,
+            sources=[],
+            topic="other",
+            query=question,
+            reason="smalltalk",
+            total_ms=_ms(started),
+            intent="smalltalk",
+        )
 
     try:
         query = question
@@ -152,7 +261,7 @@ async def answer_question(
         prompt = answer_prompt(
             [(fragment_title(h), h.chunk.text) for h in hits], history, question, query
         )
-        reply, hit = await cached_complete(redis, llm, ANSWER_SYSTEM, prompt, BotAnswer)
+        reply, hit = await cached_complete(redis, llm, answer_system(tone), prompt, BotAnswer)
         llm_ms += _ms(t)
         cached &= hit
     except (LLMError, EmbeddingError):
@@ -167,6 +276,11 @@ async def answer_question(
             total_ms=_ms(started),
         )
 
+    if reply.intent == "smalltalk":
+        result = handoff("smalltalk", "other")
+        result.intent, result.answered = "smalltalk", None
+        result.text = reply.answer.strip() or SMALLTALK[0][2]
+        return result
     if reply.intent != "question":
         booking = reply.intent == "booking"
         result = handoff("booking_intent" if booking else "operator_intent", reply.topic)

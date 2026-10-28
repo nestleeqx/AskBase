@@ -24,6 +24,9 @@ def now() -> datetime:
     return datetime.now(UTC)
 
 
+# Настройки бота для всех клиентов (их меняет владелец клиники)
+CLINIC_OWNER = "clinic"
+
 # Владелец вымышленных демо-диалогов: их видят все посетители, но менять не может никто.
 # Настоящие id посетителей длиннее, поэтому совпасть с ним не могут
 DEMO_VISITOR = "demo"
@@ -139,6 +142,8 @@ class Message(Base):
     trace: Mapped[dict | None] = mapped_column(JSON)
     latency_ms: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    # Вопрос без ответа разобран: владелец добавил ответ в базу или отметил вручную
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     conversation: Mapped[Conversation] = relationship(back_populates="messages")
 
@@ -174,4 +179,36 @@ class Booking(Base):
     preferred_time: Mapped[str] = mapped_column(String(200))
     # new — ждёт звонка администратора, confirmed — подтверждена, cancelled — отменена
     status: Mapped[str] = mapped_column(String(12), default="new")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class BotProfile(Base):
+    """Настройки бота: приветствие, тон, контакты. owner — CLINIC_OWNER для всех клиентов
+    или id посетителя демо: его настройки действуют в его тестовом чате и Telegram-чате."""
+
+    __tablename__ = "bot_profiles"
+
+    owner: Mapped[str] = mapped_column(String(64), primary_key=True)
+    greeting: Mapped[str] = mapped_column(Text)
+    # neutral, friendly, formal, brief — см. TONES в prompts
+    tone: Mapped[str] = mapped_column(String(12))
+    phone: Mapped[str] = mapped_column(String(40))
+    hours: Mapped[str] = mapped_column(String(120))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class KbAnswer(Base):
+    """Ответ администратора на вопрос, на который бот не ответил. Все ответы посетителя
+    собираются в документ «Ответы администратора» — бот находит их, как любой документ."""
+
+    __tablename__ = "kb_answers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    visitor_id: Mapped[str] = mapped_column(String(64), index=True)
+    question: Mapped[str] = mapped_column(Text)
+    answer: Mapped[str] = mapped_column(Text)
+    # Ответ бота «не нашёл», на который отвечает администратор
+    message_id: Mapped[int | None] = mapped_column(
+        ForeignKey("messages.id", ondelete="SET NULL"), index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
