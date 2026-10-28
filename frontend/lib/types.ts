@@ -50,6 +50,44 @@ export type SearchHit = {
   keyword_rank: number | null;
 };
 
+export type Source = { id: string; title: string; kind: DocKind };
+
+export type TraceHit = {
+  rank: number;
+  document: { id: string; title: string; kind: DocKind; own: boolean };
+  heading: string | null;
+  text: string;
+  similarity: number;
+  /** Фрагмент вошёл в ответ */
+  used: boolean;
+};
+
+export type Trace = {
+  query: string;
+  reason: "answered" | "no_match" | "not_in_docs" | "no_sources" | "error";
+  reason_label: string;
+  hits: TraceHit[];
+  search_ms: number;
+  llm_ms: number;
+  cached: boolean;
+};
+
+export type ChatMessage = {
+  id: number;
+  role: "user" | "bot" | "operator";
+  text: string;
+  answered: boolean | null;
+  topic: string | null;
+  topic_label: string | null;
+  sources: Source[];
+  trace: Trace | null;
+  latency_ms: number | null;
+  created_at: string;
+};
+
+export type Conversation = { id: string; messages: ChatMessage[] };
+export type ChatReply = { conversation_id: string; user: ChatMessage; bot: ChatMessage };
+
 export type SearchResult = {
   question: string;
   took_ms: number;

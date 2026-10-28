@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUpRight, FileStack, Globe, Menu, SearchCheck, X } from "lucide-react";
+import { ArrowUpRight, FileStack, Globe, Menu, MessagesSquare, SearchCheck, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
@@ -61,6 +61,7 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
     },
     { href: "/admin/search", label: "Проверка поиска", icon: <SearchCheck className="size-4" /> },
   ];
+  const chat: Item = { href: "/admin/chat", label: "Тестовый чат", icon: <MessagesSquare className="size-4" /> };
   const site: Item = {
     href: CLINIC_RULES_PATH,
     label: "Сайт клиники",
@@ -76,6 +77,10 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         </Link>
       </div>
       <nav className="flex-1 space-y-6 overflow-y-auto px-3 pt-2 scrollbar-thin">
+        <div>
+          <p className="mb-1.5 px-2.5 text-[11px] font-medium text-ink-3">Бот</p>
+          <NavItem item={chat} onNavigate={onNavigate} />
+        </div>
         <div>
           <p className="mb-1.5 px-2.5 text-[11px] font-medium text-ink-3">База знаний</p>
           <div className="space-y-0.5">

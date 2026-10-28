@@ -10,6 +10,8 @@ TEST_DB = os.environ.get(
 os.environ.update(
     DATABASE_URL=TEST_DB,
     EMBEDDING_PROVIDER="mock",
+    LLM_PROVIDER="mock",
+    QUESTIONS_PER_HOUR="1000",
     SEARCHES_PER_HOUR="1000",
     UPLOADS_PER_HOUR="1000",
     SITE_URL="https://clinic.example",

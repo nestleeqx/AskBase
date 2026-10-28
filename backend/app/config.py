@@ -60,17 +60,38 @@ class Settings(BaseSettings):
     embedding_provider: Literal["openai", "yandex", "mock"] | None = None
     openai_embedding_model: str = "text-embedding-3-small"
 
+    # Нейросеть для ответов: openai — любой OpenAI-совместимый API, yandex — YandexGPT,
+    # mock — ответ первым найденным фрагментом без внешнего API.
+    # Не задан — openai, если есть OPENAI_API_KEY, иначе mock
+    llm_provider: Literal["openai", "yandex", "mock"] | None = None
+    llm_timeout: float = 30.0
+    llm_temperature: float = 0.1
+
     openai_api_key: str = ""
     openai_base_url: str = "https://api.openai.com/v1"
+    openai_model: str = "gpt-4o-mini"
+    # json_schema — строгая схема (OpenAI, OpenRouter); json_object — для API без поддержки схем
+    openai_json_mode: Literal["json_schema", "json_object"] = "json_schema"
+    # Глубина рассуждений для моделей GPT-5 и o-серии (none, minimal, low, medium, high).
+    # Пусто — не передаём: старые модели этот параметр не знают
+    openai_reasoning_effort: str = ""
+
     yandex_api_key: str = ""
     yandex_folder_id: str = ""
+    yandex_model: str = "yandexgpt/latest"
     request_timeout: float = 30.0
 
     # Поиск: сколько фрагментов отдавать модели
     search_top_k: int = 6
+    # Если даже лучший фрагмент дальше по смыслу, а совпадений по словам нет, — вопрос точно
+    # не по базе: бот передаёт его администратору, не тратя запрос к нейросети
+    answer_min_similarity: float = 0.12
+    # Сколько последних сообщений диалога бот помнит
+    history_messages: int = 6
 
     # Защита бюджета публичного демо
     max_question_chars: int = 500
+    questions_per_hour: int = 30
     searches_per_hour: int = 60
     uploads_per_hour: int = 10
     # Свои документы гостя: сколько, какого размера; удаляются через сутки
@@ -94,6 +115,8 @@ class Settings(BaseSettings):
     def _defaults(self) -> "Settings":
         if self.embedding_provider is None:
             self.embedding_provider = "openai" if self.openai_api_key else "mock"
+        if self.llm_provider is None:
+            self.llm_provider = "openai" if self.openai_api_key else "mock"
         if self.allow_private_urls is None:
             self.allow_private_urls = not self.vercel
         return self

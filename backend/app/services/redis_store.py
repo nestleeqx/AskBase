@@ -2,10 +2,12 @@ import hashlib
 import json
 import time
 
+from pydantic import BaseModel
 from redis.asyncio import Redis
 
 from app.config import get_settings
 from app.embeddings import EmbeddingProvider
+from app.llm import LLMProvider
 
 _redis: Redis | None = None
 
@@ -24,6 +26,25 @@ def get_redis() -> Redis:
 def set_redis(client: Redis) -> None:
     global _redis
     _redis = client
+
+
+# --- Кеш одинаковых запросов к модели: тот же вопрос с теми же фрагментами не стоит токенов ---
+
+
+async def cached_complete[T: BaseModel](
+    redis: Redis, provider: LLMProvider, system: str, user: str, schema: type[T]
+) -> tuple[T, bool]:
+    """Ответ модели и признак, что он взят из кеша."""
+    digest = hashlib.sha256(
+        "\x00".join([provider.name, provider.model, schema.__name__, system, user]).encode()
+    ).hexdigest()
+    key = f"{PREFIX}llm:{digest}"
+    hit = await redis.get(key)
+    if hit:
+        return schema.model_validate_json(hit), True
+    result = await provider.complete_json(system, user, schema)
+    await redis.set(key, result.model_dump_json(), ex=get_settings().cache_ttl_seconds)
+    return result, False
 
 
 # --- Кеш векторов вопросов: одинаковый вопрос не идёт в API эмбеддингов второй раз ---

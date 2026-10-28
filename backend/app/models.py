@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Computed, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import JSON, Boolean, Computed, DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -72,3 +72,48 @@ class Chunk(Base):
     )
 
     document: Mapped[Document] = relationship(back_populates="chunks")
+
+
+class Conversation(Base):
+    """Диалог с ботом: тестовый чат в админке или переписка в Telegram."""
+
+    __tablename__ = "conversations"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    # Чей это диалог в демо: тестовый чат видит только тот, кто его начал
+    visitor_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    # test — тестовый чат в админке, telegram — переписка с ботом
+    channel: Mapped[str] = mapped_column(String(16), default="test")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+    messages: Mapped[list["Message"]] = relationship(
+        back_populates="conversation",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="Message.id",
+    )
+
+
+class Message(Base):
+    __tablename__ = "messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    conversation_id: Mapped[str] = mapped_column(
+        ForeignKey("conversations.id", ondelete="CASCADE"), index=True
+    )
+    # user — клиент, bot — ответ бота, operator — ответ администратора
+    role: Mapped[str] = mapped_column(String(12))
+    text: Mapped[str] = mapped_column(Text)
+    # У ответов бота: нашёлся ли ответ в документах. False — вопрос передан администратору
+    answered: Mapped[bool | None] = mapped_column(Boolean)
+    reason: Mapped[str | None] = mapped_column(String(20))
+    topic: Mapped[str | None] = mapped_column(String(20))
+    # Документы-источники: [{"id", "title", "kind"}]
+    sources: Mapped[list | None] = mapped_column(JSON)
+    # Что искал бот и что нашёл — для разбора ответа в админке
+    trace: Mapped[dict | None] = mapped_column(JSON)
+    latency_ms: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+    conversation: Mapped[Conversation] = relationship(back_populates="messages")

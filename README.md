@@ -28,6 +28,7 @@ cp .env.example .env   # впишите OPENAI_API_KEY; без ключа пои
 docker compose up -d --build
 ```
 
+- http://localhost:3000/admin/chat — тестовый чат с ботом и разбор каждого ответа
 - http://localhost:3000/admin/documents — документы базы знаний, загрузка своих файлов и ссылок
 - http://localhost:3000/admin/search — проверка поиска: какие фрагменты найдутся по вопросу
 - http://localhost:8000/docs — API
@@ -39,6 +40,12 @@ docker compose up -d --build
 ```bash
 docker compose up -d postgres
 cd backend && uv run pytest
+```
+
+Проверка точности на тестовом наборе (нужен ключ в `.env`):
+
+```bash
+cd backend && uv run python scripts/evaluate.py --report eval-report.html
 ```
 
 ## Демо-база знаний — подробнее

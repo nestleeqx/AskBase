@@ -45,3 +45,7 @@ target-version = "py312"
 select = ["E", "F", "I", "UP", "B"]
 # Depends(...) в аргументах — идиома FastAPI
 ignore = ["B008"]
+
+[tool.ruff.lint.per-file-ignores]
+# HTML-шаблон отчёта: длинные строки разметки читаются лучше целиком
+"scripts/evaluate.py" = ["E501"]

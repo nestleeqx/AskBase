@@ -1,4 +1,4 @@
-import type { Doc, DocumentChunks, DocumentList, SearchResult } from "./types";
+import type { ChatReply, Conversation, Doc, DocumentChunks, DocumentList, SearchResult } from "./types";
 
 export const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
 
@@ -79,4 +79,9 @@ export const api = {
   fileUrl: (id: string) => `${API_URL}/api/documents/${id}/file`,
 
   search: (question: string) => request<SearchResult>("/api/search", json("POST", { question })),
+
+  /** Без conversationId начинается новый диалог. */
+  ask: (question: string, conversationId?: string | null) =>
+    request<ChatReply>("/api/chat", json("POST", { question, conversation_id: conversationId ?? undefined })),
+  conversation: (id: string) => request<Conversation>(`/api/chat/${id}`),
 };

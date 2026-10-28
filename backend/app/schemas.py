@@ -74,6 +74,63 @@ class SearchHit(BaseModel):
     keyword_rank: int | None
 
 
+class ChatIn(BaseModel):
+    question: str = Field(min_length=1, max_length=2000)
+    # Пусто — новый диалог
+    conversation_id: str | None = None
+
+
+class SourceOut(BaseModel):
+    id: str
+    title: str
+    kind: str
+
+
+class TraceHit(BaseModel):
+    rank: int
+    document: DocumentRef
+    heading: str | None
+    text: str
+    similarity: float
+    # Фрагмент вошёл в ответ
+    used: bool
+
+
+class Trace(BaseModel):
+    # По какому вопросу искали: после уточнения с учётом истории он может отличаться
+    query: str
+    reason: str
+    reason_label: str
+    hits: list[TraceHit]
+    search_ms: int
+    llm_ms: int
+    cached: bool
+
+
+class MessageOut(BaseModel):
+    id: int
+    role: str
+    text: str
+    answered: bool | None = None
+    topic: str | None = None
+    topic_label: str | None = None
+    sources: list[SourceOut] = []
+    trace: Trace | None = None
+    latency_ms: int | None = None
+    created_at: datetime
+
+
+class ConversationOut(BaseModel):
+    id: str
+    messages: list[MessageOut]
+
+
+class ChatReply(BaseModel):
+    conversation_id: str
+    user: MessageOut
+    bot: MessageOut
+
+
 class SearchOut(BaseModel):
     question: str
     took_ms: int
