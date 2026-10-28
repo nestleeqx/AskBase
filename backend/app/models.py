@@ -2,7 +2,18 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import JSON, Boolean, Computed, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    Boolean,
+    Computed,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+)
 from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -107,6 +118,8 @@ class Message(Base):
     text: Mapped[str] = mapped_column(Text)
     # У ответов бота: нашёлся ли ответ в документах. False — вопрос передан администратору
     answered: Mapped[bool | None] = mapped_column(Boolean)
+    # Почему бот ответил так: answered, no_match, … (см. REASONS), а также служебные
+    # booking — заявка на запись, operator — клиент попросил администратора
     reason: Mapped[str | None] = mapped_column(String(20))
     topic: Mapped[str | None] = mapped_column(String(20))
     # Документы-источники: [{"id", "title", "kind"}]
@@ -117,3 +130,37 @@ class Message(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
     conversation: Mapped[Conversation] = relationship(back_populates="messages")
+
+
+class TelegramChat(Base):
+    """Чат клиента с ботом в Telegram — у каждого один диалог."""
+
+    __tablename__ = "telegram_chats"
+
+    chat_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    conversation_id: Mapped[str] = mapped_column(
+        ForeignKey("conversations.id", ondelete="CASCADE"), unique=True
+    )
+    # Имя клиента в Telegram и ник — чтобы администратор понимал, с кем говорит
+    title: Mapped[str] = mapped_column(String(200))
+    username: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class Booking(Base):
+    """Заявка на запись, собранная ботом по шагам. Время подтверждает администратор."""
+
+    __tablename__ = "bookings"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    conversation_id: Mapped[str] = mapped_column(
+        ForeignKey("conversations.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(100))
+    phone: Mapped[str] = mapped_column(String(32))
+    # Что беспокоит или на какую услугу — клиент может пропустить
+    reason: Mapped[str | None] = mapped_column(String(300))
+    preferred_time: Mapped[str] = mapped_column(String(200))
+    # new — ждёт звонка администратора, confirmed — подтверждена, cancelled — отменена
+    status: Mapped[str] = mapped_column(String(12), default="new")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)

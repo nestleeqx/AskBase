@@ -59,9 +59,14 @@ async def ask(
     conversation: Conversation,
     question: str,
     visitor: str,
+    use_history: bool = True,
 ) -> tuple[Message, Message]:
-    """Вопрос клиента → ответ бота; оба сообщения сохраняются в диалоге."""
-    history = await recent_history(session, conversation.id)
+    """Вопрос клиента → ответ бота; оба сообщения сохраняются в диалоге.
+
+    use_history=False — вопрос самостоятельный (кнопка в Telegram): без истории ответ
+    одинаковый для всех и берётся из кеша.
+    """
+    history = await recent_history(session, conversation.id) if use_history else []
     result = await answer_question(session, llm, embedder, redis, question, history, visitor)
 
     user = Message(conversation_id=conversation.id, role="user", text=question)

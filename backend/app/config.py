@@ -1,3 +1,4 @@
+import hashlib
 from functools import lru_cache
 from typing import Literal
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -102,6 +103,13 @@ class Settings(BaseSettings):
     guest_docs_ttl_hours: int = 24
     cache_ttl_seconds: int = 7 * 24 * 3600
 
+    # Telegram-бот: токен от @BotFather. Пусто — бот выключен, админка работает без него.
+    # Локально бот опрашивает Telegram сам (сервис bot в Docker)
+    telegram_bot_token: str = ""
+    # Телефон и часы работы клиники — в ответах бота «Связаться с администратором»
+    clinic_phone: str = "+7 (343) 200-18-18"
+    clinic_hours: str = "пн–пт 9:00–21:00, сб 9:00–16:00"
+
     # Загрузка страниц по ссылке: адреса локальной сети запрещены на проде,
     # но нужны при разработке. По умолчанию разрешены везде, кроме Vercel
     allow_private_urls: bool | None = None
@@ -129,6 +137,13 @@ class Settings(BaseSettings):
     def public_site_url(self) -> str:
         url = self.site_url or next(iter(self.cors_origin_list), "http://localhost:3000")
         return url.rstrip("/")
+
+    @property
+    def telegram_webhook_secret(self) -> str:
+        """Секрет вебхука выводится из токена: ещё одна переменная окружения не нужна."""
+        if not self.telegram_bot_token:
+            return ""
+        return hashlib.sha256(f"askbase-webhook:{self.telegram_bot_token}".encode()).hexdigest()
 
 
 @lru_cache

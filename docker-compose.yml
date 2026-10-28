@@ -38,6 +38,21 @@ services:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
 
+  # Telegram-бот: опрашивает Telegram сам, вебхук не нужен. Без TELEGRAM_BOT_TOKEN сразу завершается
+  bot:
+    build: ./backend
+    command: ["python", "-m", "app.bot_polling"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+asyncpg://askbase:askbase@postgres:5432/askbase
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      api: { condition: service_started }
+
   frontend:
     build:
       context: ./frontend
