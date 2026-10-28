@@ -178,3 +178,10 @@ async def test_mock_llm_answers_from_first_fragment(client):
     bot = (await chat(client, "Кто ставит имплантаты, Мельников?")).json()["bot"]
     assert bot["answered"] is True
     assert bot["sources"][0]["title"] == "Врачи и график работы"
+
+
+async def test_booking_intent_in_test_chat(client):
+    reply = (await chat(client, "Запишите меня на чистку зубов")).json()
+    assert reply["bot"]["answered"] is None
+    assert "нажмите «📅 Записаться» в Telegram-боте" in reply["bot"]["text"]
+    assert reply["bot"]["trace"]["reason"] == "booking_intent"

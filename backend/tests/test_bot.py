@@ -89,7 +89,8 @@ async def chat_messages(chat_id: int = CHAT) -> list[Message]:
 async def clean_chats(database):
     yield
     async with SessionLocal() as session:
-        for row in await session.scalars(select(TelegramChat)):
+        # Демо-диалоги (отрицательные id) не трогаем — их создаёт запуск API
+        for row in await session.scalars(select(TelegramChat).where(TelegramChat.chat_id > 0)):
             from app.models import Conversation
 
             await session.delete(await session.get(Conversation, row.conversation_id))
@@ -156,7 +157,7 @@ async def test_booking_flow(bot):
     names = bot.tg.of("sendMessage")[-1]["reply_markup"]["keyboard"]
     assert names[0][0]["text"] == "Анна"
 
-    assert "Оставьте телефон" in await say(bot, "Анна")
+    assert await say(bot, "Анна") == "Приятно познакомиться, Анна! " + botmod.ASK_PHONE
     share = bot.tg.of("sendMessage")[-1]["reply_markup"]["keyboard"][0][0]
     assert share["request_contact"] is True
 
@@ -170,7 +171,7 @@ async def test_booking_flow(bot):
     assert "Телефон: +7 (900) 123-45-67" in done
     assert "Повод" not in done
     async with SessionLocal() as session:
-        b = await session.scalar(select(Booking))
+        b = await session.scalar(select(Booking).where(Booking.phone == "+7 (900) 123-45-67"))
         assert (b.name, b.phone, b.reason, b.preferred_time, b.status) == (
             "Анна",
             "+7 (900) 123-45-67",
@@ -238,3 +239,251 @@ def test_normalize_phone(raw, phone):
     from app.services.booking import normalize_phone
 
     assert normalize_phone(raw) == phone
+
+
+def scripted_bot(bot: Bot, answer: dict) -> Bot:
+    from tests.test_chat import ScriptedLLM
+
+    return Bot(bot.sessions, ScriptedLLM(answer=answer), bot.embedder, bot.redis, bot.tg)
+
+
+def intent(kind: str, **draft) -> dict:
+    return {
+        "intent": kind,
+        "answered": False,
+        "answer": "",
+        "source_ids": [],
+        "topic": "booking" if kind == "booking" else "other",
+        "booking": {"name": "", "phone": "", "reason": "", "preferred_time": ""} | draft,
+    }
+
+
+async def test_booking_started_by_text(bot):
+    assert await say(bot, "Хочу записаться к врачу") == botmod.BOOK_START
+    msgs = await chat_messages()
+    assert [(m.role, m.reason) for m in msgs] == [("user", None), ("bot", "booking_intent")]
+    assert msgs[1].text == botmod.BOOK_FROM_TEXT and msgs[1].answered is None
+
+
+async def test_booking_from_text_prefills_known_fields(bot):
+    bot = scripted_bot(
+        bot,
+        intent(
+            "booking",
+            name="Игорь",
+            phone="+7 945 48 41",
+            reason="Отбелить зубы",
+            preferred_time="завтра в 12:30",
+        ),
+    )
+    reply = await say(bot, "Хочу записаться на отбеливание: Игорь, +7 945 48 41, завтра в 12:30")
+    assert "Уже записал:\nИмя: Игорь\nПовод: Отбелить зубы\nУдобное время: завтра в 12:30" in reply
+    assert "В номере «+7 945 48 41» не хватает цифр." in reply
+    assert reply.endswith(f"не хватает цифр.\n\n{botmod.ASK_PHONE}")
+    assert "Приятно познакомиться" not in reply
+
+    # Остальное уже известно — после телефона заявка сразу готова
+    done = await say(bot, "+7 945 480 41 00")
+    assert "Заявка на запись принята" in done and "Удобное время: завтра в 12:30" in done
+    msgs = await chat_messages()
+    # Кнопку «Записаться» клиент не нажимал — в истории его собственное сообщение
+    assert botmod.BOOK not in [m.text for m in msgs]
+    assert msgs[-1].reason == "booking"
+
+
+async def test_booking_from_text_with_everything_is_done_at_once(bot):
+    draft = dict(name="Ольга", phone="89001234567", reason="", preferred_time="в субботу утром")
+    bot = scripted_bot(bot, intent("booking", **draft))
+    reply = await say(bot, "Запишите меня: Ольга, 89001234567, в субботу утром")
+    # Повод не назван — спрашиваем только его
+    assert "Что беспокоит" in reply and "Телефон: +7 (900) 123-45-67" in reply
+    assert "Заявка на запись принята" in await say(bot, botmod.SKIP)
+
+
+async def test_operator_requested_by_text(bot, redis):
+    bot = scripted_bot(bot, intent("operator"))
+    reply = await say(bot, "Позовите, пожалуйста, живого человека")
+    assert "Передал ваш запрос администратору" in reply
+    msgs = await chat_messages()
+    assert msgs[-1].reason == "operator" and msgs[-1].answered is False
+
+
+def test_from_draft_validates_fields():
+    from app.services.booking import from_draft, next_step
+
+    state, bad = from_draft(
+        {"name": "1", "phone": "позвоните", "reason": " ", "preferred_time": ""}
+    )
+    assert state == {} and bad is None and next_step(state) == "name"
+    state, bad = from_draft({"name": "Анна", "phone": "9001234567", "preferred_time": "утром"})
+    assert state == {"name": "Анна", "phone": "+7 (900) 123-45-67", "time": "утром"} and bad is None
+    assert next_step(state) == "reason"
+
+
+async def book(bot: Bot, *answers: str) -> None:
+    for text in [botmod.BOOK, *answers]:
+        await bot.handle(message(text))
+
+
+async def bookings_of_chat() -> list[Booking]:
+    async with SessionLocal() as session:
+        row = await session.get(TelegramChat, CHAT)
+        return list(
+            await session.scalars(
+                select(Booking)
+                .where(Booking.conversation_id == row.conversation_id)
+                .order_by(Booking.created_at)
+            )
+        )
+
+
+async def test_open_booking_asks_what_to_do(bot):
+    await book(bot, "Анна", "+7 900 123-45-67", "Чистка", "Утром")
+    reply = await say(bot, botmod.BOOK)
+    assert reply.startswith("У вас уже есть заявка на запись — администратор ещё не звонил")
+    assert "Удобное время: Утром" in reply
+    buttons = bot.tg.of("sendMessage")[-1]["reply_markup"]["inline_keyboard"]
+    assert [row[0]["callback_data"] for row in buttons] == ["bk:edit", "bk:new", "bk:keep"]
+
+    # Пока клиент не выбрал, текст не начинает запись
+    assert await say(bot, "Анна") == botmod.CHOOSE
+
+    await bot.handle(button("bk:keep"))
+    assert bot.tg.texts()[-1] == botmod.BOOK_KEPT["new"]
+    # Кнопки под вопросом убраны — второе нажатие ничего не делает
+    assert bot.tg.of("editMessageReplyMarkup")[-1]["reply_markup"] == {"inline_keyboard": []}
+    sent = len(bot.tg.texts())
+    await bot.handle(button("bk:edit"))
+    assert len(bot.tg.texts()) == sent
+    assert len(await bookings_of_chat()) == 1
+
+
+async def test_edit_open_booking(bot):
+    await book(bot, "Анна", "+7 900 123-45-67", "Чистка", "Утром")
+    await say(bot, botmod.BOOK)
+    await bot.handle(button("bk:edit"))
+    reply = bot.tg.texts()[-1]
+    # Имя, телефон и повод остаются — спрашиваем новое время
+    assert reply.startswith(
+        "Изменим вашу заявку.\n\nУже записал:\n"
+        "Имя: Анна\nТелефон: +7 (900) 123-45-67\nПовод: Чистка"
+    )
+    assert "Когда вам удобно прийти" in reply
+    done = await say(bot, "Вечером")
+    assert done.startswith("<b>Заявка обновлена ✅</b>") and "Удобное время: Вечером" in done
+
+    bookings = await bookings_of_chat()
+    assert len(bookings) == 1
+    assert (bookings[0].reason, bookings[0].preferred_time) == ("Чистка", "Вечером")
+    assert (await chat_messages())[-1].text.startswith("Заявка изменена: Анна")
+
+
+async def test_book_another_person(bot):
+    await book(bot, "Анна", "+7 900 123-45-67", "Чистка", "Утром")
+    await say(bot, botmod.BOOK)
+    await bot.handle(button("bk:new"))
+    assert bot.tg.texts()[-1] == botmod.BOOK_START
+    for text in ["Миша", "+7 900 123-45-67", "Сыну 6 лет, кариес", "Утром"]:
+        await bot.handle(message(text))
+    assert "Заявка на запись принята" in bot.tg.texts()[-1]
+    assert [b.name for b in await bookings_of_chat()] == ["Анна", "Миша"]
+
+
+async def set_booking(**fields) -> None:
+    async with SessionLocal() as session:
+        b = await session.get(Booking, (await bookings_of_chat())[0].id)
+        for key, value in fields.items():
+            setattr(b, key, value)
+        await session.commit()
+
+
+async def test_move_confirmed_booking(bot, redis):
+    from app.config import get_settings
+
+    get_settings().manager_chat_id = 4242
+    try:
+        await book(bot, "Анна", "+7 900 123-45-67", "Чистка", "Утром")
+        await set_booking(status="confirmed")
+        reply = await say(bot, botmod.BOOK)
+        assert reply.startswith("У вас уже есть запись — администратор её подтвердил")
+        buttons = bot.tg.of("sendMessage")[-1]["reply_markup"]["inline_keyboard"]
+        assert buttons[0][0]["text"] == "✏️ Перенести или изменить"
+
+        await bot.handle(button("bk:edit"))
+        note = await say(bot, "В пятницу вечером")
+        # Предпоследнее — ответ клиенту, последнее — уведомление менеджеру
+        assert "Заявка обновлена" in bot.tg.texts()[-2]
+        assert "Клиент хочет перенести подтверждённую запись" in note
+        assert "<b>Было:</b>" in note and "Удобное время: В пятницу вечером" in note
+        # Новое время подтверждает администратор — заявка снова ждёт звонка
+        bookings = await bookings_of_chat()
+        assert len(bookings) == 1
+        assert (bookings[0].status, bookings[0].reason) == ("new", "Чистка")
+    finally:
+        get_settings().manager_chat_id = None
+
+
+async def test_move_with_same_time_changes_nothing(bot):
+    """Клиент нажал «Перенести», но в сообщении то же время — бот спрашивает новое,
+    а если и оно прежнее, ничего не меняет и менеджеру не пишет."""
+    from tests.test_chat import ScriptedLLM
+
+    draft = dict(name="Анна", reason="Чистка", preferred_time="на утро")
+    llm = ScriptedLLM(answer=intent("booking", **draft), query="запись на чистку")
+    sbot = Bot(bot.sessions, llm, bot.embedder, bot.redis, bot.tg)
+    await book(bot, "Анна", "+7 900 123-45-67", "Чистка", "Утро")
+    await set_booking(status="confirmed")
+    await say(sbot, "Хочу записаться на чистку, Анна, на утро")
+    await sbot.handle(button("bk:edit"))
+    assert "Когда вам удобно прийти" in sbot.tg.texts()[-1]
+    assert await say(sbot, "утро") == botmod.NOTHING_CHANGED["confirmed"]
+    bookings = await bookings_of_chat()
+    assert len(bookings) == 1 and bookings[0].status == "confirmed"
+
+
+async def test_edit_confirmed_keeps_time_from_message(bot):
+    """Сообщение меняет повод, а время в нём прежнее: бот не переспрашивает время,
+    и запись остаётся подтверждённой — администратору подтверждать нечего."""
+    from tests.test_chat import ScriptedLLM
+
+    draft = dict(name="Анна", reason="Отбеливание", preferred_time="на утро")
+    llm = ScriptedLLM(answer=intent("booking", **draft), query="запись")
+    sbot = Bot(bot.sessions, llm, bot.embedder, bot.redis, bot.tg)
+    await book(bot, "Анна", "+7 900 123-45-67", "Чистка", "Утро")
+    await set_booking(status="confirmed")
+    await say(sbot, "Хочу на отбеливание, Анна, на утро")
+    await sbot.handle(button("bk:edit"))
+    done = sbot.tg.texts()[-1]
+    assert done.startswith("<b>Заявка обновлена ✅</b>")
+    assert "Повод: Отбеливание" in done and "Время записи прежнее" in done
+    bookings = await bookings_of_chat()
+    assert (bookings[0].status, bookings[0].reason) == ("confirmed", "Отбеливание")
+
+
+def test_same_time():
+    from app.services.booking import same_time
+
+    assert same_time("на завтра на 12:30", "завтра в 12:30")
+    assert not same_time("завтра в 15:00", "завтра в 12:30")
+    assert not same_time("", "завтра")
+
+
+async def test_keep_confirmed_booking(bot):
+    await book(bot, "Анна", "+7 900 123-45-67", "Чистка", "Утром")
+    await set_booking(status="confirmed")
+    await say(bot, botmod.BOOK)
+    await bot.handle(button("bk:keep"))
+    assert bot.tg.texts()[-1] == botmod.BOOK_KEPT["confirmed"]
+
+
+async def test_old_or_cancelled_booking_does_not_ask(bot):
+    from datetime import timedelta
+
+    from app.models import now
+
+    await book(bot, "Анна", "+7 900 123-45-67", "Чистка", "Утром")
+    await set_booking(status="confirmed", created_at=now() - timedelta(days=15))
+    assert await say(bot, botmod.BOOK) == botmod.BOOK_START
+    await say(bot, botmod.CANCEL)
+    await set_booking(status="cancelled", created_at=now())
+    assert await say(bot, botmod.BOOK) == botmod.BOOK_START

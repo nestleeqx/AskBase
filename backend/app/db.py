@@ -27,9 +27,19 @@ async def get_session() -> AsyncIterator[AsyncSession]:
         yield session
 
 
+# create_all создаёт только новые таблицы — колонки, добавленные в уже существующие,
+# досоздаются здесь. Каждая команда безопасна при повторном запуске
+MIGRATIONS = [
+    "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS waiting_since TIMESTAMPTZ",
+    "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS operator_until TIMESTAMPTZ",
+]
+
+
 async def init_db() -> None:
     from app import models  # noqa: F401  — регистрирует таблицы в metadata
 
     async with engine.begin() as conn:
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.create_all)
+        for sql in MIGRATIONS:
+            await conn.execute(text(sql))

@@ -106,6 +106,11 @@ class Settings(BaseSettings):
     # Telegram-бот: токен от @BotFather. Пусто — бот выключен, админка работает без него.
     # Локально бот опрашивает Telegram сам (сервис bot в Docker)
     telegram_bot_token: str = ""
+    # Чат менеджера клиники: сюда бот пишет о заявках на запись и вопросах без ответа.
+    # Узнать id своего чата — команда /myid в боте. Пусто — уведомления не отправляются
+    manager_chat_id: int | None = None
+    # Сколько минут после ответа администратора бот молчит в этом чате
+    operator_minutes: int = 30
     # Телефон и часы работы клиники — в ответах бота «Связаться с администратором»
     clinic_phone: str = "+7 (343) 200-18-18"
     clinic_hours: str = "пн–пт 9:00–21:00, сб 9:00–16:00"
@@ -113,6 +118,12 @@ class Settings(BaseSettings):
     # Загрузка страниц по ссылке: адреса локальной сети запрещены на проде,
     # но нужны при разработке. По умолчанию разрешены везде, кроме Vercel
     allow_private_urls: bool | None = None
+
+    @field_validator("manager_chat_id", mode="before")
+    @classmethod
+    def _empty_chat(cls, v):
+        # MANAGER_CHAT_ID= без значения в .env — уведомления выключены
+        return None if v == "" else v
 
     @field_validator("database_url")
     @classmethod

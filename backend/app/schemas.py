@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -112,6 +113,8 @@ class MessageOut(BaseModel):
     role: str
     text: str
     answered: bool | None = None
+    # Служебные сообщения бота: booking — заявка на запись, operator — клиент позвал человека
+    reason: str | None = None
     topic: str | None = None
     topic_label: str | None = None
     sources: list[SourceOut] = []
@@ -136,3 +139,74 @@ class SearchOut(BaseModel):
     took_ms: int
     embedding_model: str
     results: list[SearchHit]
+
+
+class DialogLast(BaseModel):
+    role: str
+    text: str
+    created_at: datetime
+
+
+class DialogSummary(BaseModel):
+    id: str
+    # Имя клиента в Telegram и ник
+    title: str
+    username: str | None
+    # Вымышленный демо-диалог: виден всем, ответить в нём нельзя
+    demo: bool
+    waiting_since: datetime | None
+    # Пока не истекло, отвечает администратор, а бот молчит
+    operator_until: datetime | None
+    updated_at: datetime
+    messages_count: int
+    last: DialogLast | None
+
+
+class DialogList(BaseModel):
+    dialogs: list[DialogSummary]
+    # Сколько диалогов ждут ответа администратора — бейдж в меню
+    waiting: int
+
+
+class BookingOut(BaseModel):
+    id: str
+    conversation_id: str
+    client: str
+    name: str
+    phone: str
+    reason: str | None
+    preferred_time: str
+    status: str
+    created_at: datetime
+    demo: bool
+
+
+class DialogDetail(DialogSummary):
+    messages: list[MessageOut]
+    bookings: list[BookingOut]
+
+
+class ReplyIn(BaseModel):
+    text: str = Field(min_length=1, max_length=2000)
+
+
+class BookingList(BaseModel):
+    bookings: list[BookingOut]
+    new: int
+
+
+class BookingPatch(BaseModel):
+    status: Literal["new", "confirmed", "cancelled"]
+
+
+class TelegramStatus(BaseModel):
+    enabled: bool
+    username: str | None = None
+    # Посетитель привязал свой Telegram-чат и видит в «Диалогах» свою переписку
+    linked: bool = False
+    # Уведомления менеджеру настроены (MANAGER_CHAT_ID)
+    manager: bool = False
+
+
+class TelegramLink(BaseModel):
+    url: str

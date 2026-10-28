@@ -15,8 +15,10 @@ os.environ.update(
     SEARCHES_PER_HOUR="1000",
     UPLOADS_PER_HOUR="1000",
     SITE_URL="https://clinic.example",
-    # Ключ из .env разработчика не должен попасть в тесты: они не ходят во внешние API
+    # Ключи из .env разработчика не должны попасть в тесты: они не ходят во внешние API
     OPENAI_API_KEY="",
+    TELEGRAM_BOT_TOKEN="",
+    MANAGER_CHAT_ID="",
 )
 
 import asyncpg  # noqa: E402

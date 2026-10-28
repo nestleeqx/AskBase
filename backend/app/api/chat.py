@@ -20,6 +20,7 @@ def message_out(m: Message) -> MessageOut:
         role=m.role,
         text=m.text,
         answered=m.answered,
+        reason=m.reason if m.reason in {"booking", "operator"} else None,
         topic=m.topic,
         topic_label=TOPICS.get(m.topic or ""),
         sources=m.sources or [],
@@ -62,7 +63,7 @@ async def chat(
         await session.flush()
     await hit_limit(redis, "chat", ip, s.questions_per_hour)
 
-    user, bot = await ask(session, llm, embedder, redis, conv, question, visitor)
+    user, bot, _ = await ask(session, llm, embedder, redis, conv, question, visitor)
     return ChatReply(conversation_id=conv.id, user=message_out(user), bot=message_out(bot))
 
 

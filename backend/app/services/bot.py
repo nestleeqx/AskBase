@@ -6,11 +6,14 @@
 import asyncio
 import hashlib
 import logging
+import secrets
 from dataclasses import dataclass
+from datetime import timedelta
 from html import escape
 from typing import Any
 
 from redis.asyncio import Redis
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import get_settings
@@ -20,6 +23,7 @@ from app.models import Booking, Conversation, Message, TelegramChat, now
 from app.services import booking
 from app.services.answer import sources_line
 from app.services.dialogs import ask
+from app.services.notify import client_line, notify_manager
 from app.services.prompts import CLINIC
 from app.services.redis_store import PREFIX, RateLimitExceeded, hit_limit
 from app.services.seed import SEED_BY_KEY
@@ -76,16 +80,47 @@ PRICES_TEXT = (
 TEXT_ONLY = "Я понимаю только текст — напишите, пожалуйста, вопрос словами."
 SORRY = "Не получилось ответить — попробуйте ещё раз через минуту."
 
-BOOK_START = (
-    "Запишу вас на приём — это четыре коротких вопроса. "
-    "Администратор позвонит в рабочее время и подтвердит время визита.\n\n"
-    "Как вас зовут?"
+BOOK_INTRO = (
+    "Запишу вас на приём. Администратор позвонит в рабочее время и подтвердит время визита."
 )
+BOOK_START = f"{BOOK_INTRO}\n\nКак вас зовут?"
+BOOK_EDIT_INTRO = "Изменим вашу заявку."
+OPEN_BOOKING = {
+    "new": "У вас уже есть заявка на запись — администратор ещё не звонил:",
+    "confirmed": "У вас уже есть запись — администратор её подтвердил:",
+}
+# Подтверждённая заявка считается открытой две недели: более старая — уже прошедший визит
+CONFIRMED_DAYS = 14
+
+
+def choice_buttons(confirmed: bool) -> Markup:
+    edit = "✏️ Перенести или изменить" if confirmed else "✏️ Изменить эту заявку"
+    return inline(
+        [
+            [(edit, "bk:edit")],
+            [("➕ Записать ещё одного человека", "bk:new")],
+            [("Оставить как есть", "bk:keep")],
+        ]
+    )
+
+
+NOTHING_CHANGED = {
+    "new": (
+        "Ничего не поменялось — заявка остаётся прежней. Администратор позвонит в рабочее время."
+    ),
+    "confirmed": "Ничего не поменялось — запись остаётся прежней. Ждём вас в клинике!",
+}
+CHOOSE = "Выберите, пожалуйста, вариант кнопкой под сообщением."
+BOOK_KEPT = {
+    "new": "Хорошо, заявка остаётся как есть. Администратор позвонит в рабочее время.",
+    "confirmed": "Хорошо, запись остаётся как есть. Ждём вас в клинике!",
+}
+# Сообщение бота в истории диалога, когда клиент попросил записать его своими словами
+BOOK_FROM_TEXT = "Начал запись на приём по шагам."
 NAME_INVALID = "Напишите, пожалуйста, имя — например, «Анна»."
-ASK_PHONE = (
-    "Приятно познакомиться, {name}! Оставьте телефон для связи — "
-    "нажмите кнопку ниже или напишите номер."
-)
+ASK_PHONE = "Оставьте телефон для связи — нажмите кнопку ниже или напишите номер."
+# Только сразу после того, как клиент назвал имя на шаге записи
+GREET = "Приятно познакомиться, {name}! "
 PHONE_INVALID = (
     "Не похоже на номер телефона. Напишите его в виде +7 900 123-45-67 "
     "или нажмите «Поделиться номером»."
@@ -103,17 +138,78 @@ BOOK_CANCELLED = "Хорошо, запись отменена. Если появ
 NOTHING_TO_CANCEL = "Отменять нечего. Задайте вопрос или выберите кнопку внизу."
 
 
-def _book_done(b: Booking) -> str:
+LINKED = (
+    "Готово, чат подключён к демо-админке ✅\n"
+    "Ваша переписка с ботом теперь видна в разделе «Диалоги» — оттуда можно ответить себе "
+    "как администратор клиники."
+)
+LINK_EXPIRED = (
+    "Ссылка для подключения к админке устарела. Откройте раздел «Диалоги» в админке "
+    "и нажмите «Подключить Telegram» ещё раз."
+)
+LINK_TTL = 30 * 60
+
+
+def _link_key(token: str) -> str:
+    return f"{PREFIX}tg:link:{token}"
+
+
+async def create_link_token(redis: Redis, visitor_id: str) -> str:
+    """Одноразовый токен для ссылки t.me/<бот>?start=<токен>: по нему чат найдёт посетителя."""
+    token = secrets.token_urlsafe(16)
+    await redis.set(_link_key(token), visitor_id, ex=LINK_TTL)
+    return token
+
+
+async def bot_username(redis: Redis, tg: TelegramClient) -> str:
+    """Имя бота для ссылок — из getMe, с кешем на сутки."""
+    key = f"{PREFIX}tg:me:{get_settings().telegram_webhook_secret[:12]}"
+    cached = await redis.get(key)
+    if cached:
+        return cached
+    me = await tg.call("getMe")
+    await redis.set(key, me["username"], ex=24 * 3600)
+    return me["username"]
+
+
+def operator_active(conv: Conversation) -> bool:
+    return conv.operator_until is not None and conv.operator_until > now()
+
+
+def _client(chat: dict[str, Any]) -> str:
+    return client_line(_chat_title(chat), chat.get("username"))
+
+
+def _booking_lines(b: Booking) -> str:
     rows = [("Имя", b.name), ("Телефон", b.phone)]
     if b.reason:
         rows.append(("Повод", b.reason))
     rows.append(("Удобное время", b.preferred_time))
-    lines = "\n".join(f"{label}: {escape(value)}" for label, value in rows)
-    return (
-        f"<b>Заявка на запись принята ✅</b>\n\n{lines}\n\n"
-        "Администратор позвонит вам в рабочее время и подтвердит запись. "
-        "Если планы изменятся — просто напишите сюда."
-    )
+    return "\n".join(f"{label}: {escape(value)}" for label, value in rows)
+
+
+def _booking_lines_partial(state: dict[str, Any]) -> str:
+    """То, что клиент уже сообщил для записи, — строками «Имя: Игорь»."""
+    rows = [
+        ("Имя", state.get("name")),
+        ("Телефон", state.get("phone")),
+        ("Повод", state.get("reason")),
+        ("Удобное время", state.get("time")),
+    ]
+    return "\n".join(f"{label}: {escape(value)}" for label, value in rows if value)
+
+
+def _book_done(b: Booking, edited: bool = False) -> str:
+    header = "Заявка обновлена ✅" if edited else "Заявка на запись принята ✅"
+    if b.status == "confirmed":
+        # Время то же — запись остаётся подтверждённой
+        tail = "Время записи прежнее — ждём вас в клинике!"
+    else:
+        tail = (
+            "Администратор позвонит вам в рабочее время и подтвердит запись. "
+            "Если планы изменятся — просто напишите сюда."
+        )
+    return f"<b>{header}</b>\n\n{_booking_lines(b)}\n\n{tail}"
 
 
 def _operator_text() -> str:
@@ -125,10 +221,10 @@ def _operator_text() -> str:
     )
 
 
-def booking_summary(b: Booking) -> str:
+def booking_summary(b: Booking, edited: bool = False) -> str:
     """Заявка одной строкой — сообщение в истории диалога для администратора."""
     parts = [b.name, b.phone, *([b.reason] if b.reason else []), f"удобно: {b.preferred_time}"]
-    return "Заявка на запись: " + ", ".join(parts)
+    return ("Заявка изменена: " if edited else "Заявка на запись: ") + ", ".join(parts)
 
 
 def reply_html(text: str, sources: list[dict] | None, title: str | None = None) -> str:
@@ -187,7 +283,14 @@ class Bot:
 
         if command in {"/start", "/help"}:
             await booking.clear_state(self.redis, chat_id)
-            await self.tg.send(chat_id, GREETING, MENU)
+            arg = text.split(maxsplit=1)[1] if " " in text else ""
+            if command == "/start" and arg:
+                await self._link(chat, arg.strip())
+            else:
+                await self.tg.send(chat_id, GREETING, MENU)
+            return
+        if command == "/myid":
+            await self.tg.send(chat_id, f"ID этого чата: <code>{chat_id}</code>")
             return
         if command == "/cancel" or (text == CANCEL and command == ""):
             cancelled = await booking.clear_state(self.redis, chat_id)
@@ -202,13 +305,13 @@ class Bot:
         elif text == PRICES:
             await self.tg.send(chat_id, PRICES_TEXT, _price_buttons())
         elif text == BOOK:
-            await self._booking_start(msg)
+            await self._booking_start(chat, msg.get("from") or {})
         elif text == OPERATOR:
             await self._operator(chat)
         elif command:
             await self.tg.send(chat_id, GREETING, MENU)
         else:
-            await self._question(chat, text)
+            await self._question(chat, text, sender=msg.get("from"))
 
     async def _conversation(self, session: AsyncSession, chat: dict[str, Any]) -> Conversation:
         """Диалог чата: заводится при первом сообщении, имя клиента обновляется."""
@@ -233,8 +336,26 @@ class Bot:
         except TelegramError:
             pass
 
+    async def _link(self, chat: dict[str, Any], token: str) -> None:
+        """/start <токен> из админки: чат привязывается к посетителю, и тот видит свой диалог."""
+        visitor = await self.redis.getdel(_link_key(token))
+        if visitor is None:
+            await self.tg.send(chat["id"], f"{LINK_EXPIRED}\n\n{GREETING}", MENU)
+            return
+        async with self.sessions() as session:
+            conv = await self._conversation(session, chat)
+            # Чат мог быть привязан к другому посетителю — теперь он принадлежит этому
+            conv.visitor_id = visitor
+            await session.commit()
+        await self.tg.send(chat["id"], f"{LINKED}\n\n{GREETING}", MENU)
+
     async def _question(
-        self, chat: dict[str, Any], text: str, title: str | None = None, use_history: bool = True
+        self,
+        chat: dict[str, Any],
+        text: str,
+        title: str | None = None,
+        use_history: bool = True,
+        sender: dict[str, Any] | None = None,
     ) -> None:
         s = get_settings()
         chat_id = chat["id"]
@@ -244,44 +365,102 @@ class Bot:
                 chat_id, f"Сообщение длиннее {s.max_question_chars} символов — сократите его."
             )
             return
-        try:
-            await hit_limit(self.redis, "chat", f"tg:{chat_id}", s.questions_per_hour)
-        except RateLimitExceeded as e:
-            minutes = max(1, e.retry_after // 60)
-            await self.tg.send(
-                chat_id, f"Лимит демо: {e.limit} вопросов в час. Попробуйте через {minutes} мин."
-            )
-            return
 
-        typing = asyncio.create_task(self._keep_typing(chat_id))
-        try:
-            async with self.sessions() as session:
-                conv = await self._conversation(session, chat)
-                # visitor пуст: в Telegram видны только документы клиники, не свои документы гостей
-                _, reply = await ask(
-                    session, self.llm, self.embedder, self.redis, conv, question, "", use_history
-                )
-        finally:
-            typing.cancel()
-        await self.tg.send(chat_id, reply_html(reply.text, reply.sources, title))
-
-    async def _log(self, chat: dict[str, Any], *messages: Message) -> None:
         async with self.sessions() as session:
             conv = await self._conversation(session, chat)
-            for m in messages:
-                m.conversation_id = conv.id
-            session.add_all(messages)
-            conv.updated_at = now()
-            await session.commit()
+            # Отвечает администратор: бот молчит, сообщение ждёт человека в админке.
+            # Кнопки цен — справка, а не разговор, на них бот отвечает и сейчас
+            if use_history and operator_active(conv):
+                session.add(Message(conversation_id=conv.id, role="user", text=question))
+                conv.updated_at = now()
+                conv.waiting_since = conv.waiting_since or now()
+                await session.commit()
+                await notify_manager(
+                    self.tg,
+                    f"💬 <b>Новое сообщение</b>\n{_client(chat)}: «{escape(question)}»",
+                    conv.id,
+                )
+                return
+
+            try:
+                await hit_limit(self.redis, "chat", f"tg:{chat_id}", s.questions_per_hour)
+            except RateLimitExceeded as e:
+                minutes = max(1, e.retry_after // 60)
+                await self.tg.send(
+                    chat_id,
+                    f"Лимит демо: {e.limit} вопросов в час. Попробуйте через {minutes} мин.",
+                )
+                return
+
+            typing = asyncio.create_task(self._keep_typing(chat_id))
+            try:
+                # Привязанный к админке чат видит и свои документы гостя; остальные — только
+                # документы клиники
+                _, reply, result = await ask(
+                    session,
+                    self.llm,
+                    self.embedder,
+                    self.redis,
+                    conv,
+                    question,
+                    conv.visitor_id or "",
+                    use_history,
+                )
+                # Клиент не спрашивал, а хотел записаться или позвать человека: в истории —
+                # то, что бот сделал на самом деле
+                if result.intent == "booking":
+                    reply.text = BOOK_FROM_TEXT
+                elif result.intent == "operator":
+                    reply.text, reply.reason = _operator_text(), "operator"
+                if reply.answered is False:
+                    conv.waiting_since = conv.waiting_since or now()
+                await session.commit()
+            finally:
+                typing.cancel()
+            conv_id = conv.id
+
+        if result.intent == "booking":
+            await self._booking_start(chat, sender or {}, result.draft)
+            return
+        if result.intent == "operator":
+            await self.tg.send(chat_id, reply.text, MENU)
+            await notify_manager(
+                self.tg,
+                f"👤 <b>Клиент просит администратора</b>\n{_client(chat)}: «{escape(question)}»",
+                conv_id,
+            )
+            return
+        await self.tg.send(chat_id, reply_html(reply.text, reply.sources, title))
+        if reply.answered is False:
+            await notify_manager(
+                self.tg,
+                f"❓ <b>Бот не смог ответить</b>\n{_client(chat)}: «{escape(question)}»",
+                conv_id,
+            )
 
     async def _operator(self, chat: dict[str, Any]) -> None:
         text = _operator_text()
-        await self._log(
-            chat,
-            Message(role="user", text=OPERATOR),
-            Message(role="bot", text=text, reason="operator", topic="other"),
-        )
+        async with self.sessions() as session:
+            conv = await self._conversation(session, chat)
+            session.add_all(
+                [
+                    Message(conversation_id=conv.id, role="user", text=OPERATOR),
+                    Message(
+                        conversation_id=conv.id,
+                        role="bot",
+                        text=text,
+                        reason="operator",
+                        topic="other",
+                    ),
+                ]
+            )
+            conv.updated_at = now()
+            conv.waiting_since = conv.waiting_since or now()
+            await session.commit()
         await self.tg.send(chat["id"], text, MENU)
+        await notify_manager(
+            self.tg, f"👤 <b>Клиент просит администратора</b>\n{_client(chat)}", conv.id
+        )
 
     # --- Кнопки под сообщениями ---
 
@@ -290,7 +469,12 @@ class Bot:
         chat = (query.get("message") or {}).get("chat") or {}
         await self.tg.answer(query["id"])
         kind, _, key = data.partition(":")
-        if kind != "price" or chat.get("type") != "private":
+        if chat.get("type") != "private":
+            return
+        if kind == "bk" and key in {"edit", "new", "keep"}:
+            await self._booking_choice(query, chat, key)
+            return
+        if kind != "price":
             return
         if key == PRICE_PDF:
             await self._send_price_list(chat["id"])
@@ -313,20 +497,118 @@ class Bot:
 
     # --- Запись на приём ---
 
-    async def _booking_start(self, msg: dict[str, Any]) -> None:
-        chat_id = msg["chat"]["id"]
-        await booking.save_state(self.redis, chat_id, {"step": "name"})
-        sender = msg.get("from") or {}
-        name = booking.valid_name(sender.get("first_name") or "")
-        rows = [[name], [CANCEL]] if name else [[CANCEL]]
-        await self.tg.send(chat_id, BOOK_START, keyboard(rows, placeholder="Ваше имя"))
+    async def _open_booking(self, chat_id: int) -> Booking | None:
+        """Последняя открытая заявка клиента: ждёт звонка или подтверждена недавно."""
+        since = now() - timedelta(days=CONFIRMED_DAYS)
+        async with self.sessions() as session:
+            return await session.scalar(
+                select(Booking)
+                .join(TelegramChat, TelegramChat.conversation_id == Booking.conversation_id)
+                .where(
+                    TelegramChat.chat_id == chat_id,
+                    or_(
+                        Booking.status == "new",
+                        and_(Booking.status == "confirmed", Booking.created_at >= since),
+                    ),
+                )
+                .order_by(Booking.created_at.desc())
+                .limit(1)
+            )
 
-    async def _ask_step(self, chat_id: int, state: dict[str, Any], prefix: str = "") -> None:
+    async def _booking_start(
+        self,
+        chat: dict[str, Any],
+        sender: dict[str, Any],
+        draft: dict[str, str] | None = None,
+        mode: str | None = None,
+        edit_id: str | None = None,
+    ) -> None:
+        """Запись по шагам. draft — что клиент уже написал сам («Игорь, +7…, завтра в 12»):
+        эти шаги пропускаются, бот спрашивает только недостающее.
+
+        Если у клиента уже есть открытая заявка, бот сначала спрашивает, что с ней сделать.
+        mode — ответ: edit (изменить или перенести её) или new (записать ещё одного)."""
+        chat_id = chat["id"]
+        if mode is None:
+            existing = await self._open_booking(chat_id)
+            if existing is not None:
+                choice = {
+                    "step": "choose",
+                    "draft": draft,
+                    "booking_id": existing.id,
+                    "status": existing.status,
+                }
+                await booking.save_state(self.redis, chat_id, choice)
+                text = (
+                    f"{OPEN_BOOKING[existing.status]}\n\n{_booking_lines(existing)}\n\nЧто сделать?"
+                )
+                await self.tg.send(chat_id, text, choice_buttons(existing.status == "confirmed"))
+                return
+
+        state, bad_phone = booking.from_draft(draft or {})
+        intro = BOOK_INTRO
+        if mode == "edit" and edit_id:
+            async with self.sessions() as session:
+                old = await session.get(Booking, edit_id)
+            if old is not None:
+                # Остальное берём из заявки, если клиент не написал нового. Если его сообщение
+                # ничего в заявке не меняет, он, видимо, хочет перенести её — спросим время
+                if not booking.changes(state, old):
+                    state.pop("time", None)
+                state = {"name": old.name, "phone": old.phone, "reason": old.reason} | state
+                state["edit_id"] = old.id
+                intro = BOOK_EDIT_INTRO
+        state["via"] = "text" if draft is not None else "button"
+        state["suggest"] = booking.valid_name(sender.get("first_name") or "")
+        step = booking.next_step(state)
+        if step is None:
+            await self._booking_done(chat, state)
+            return
+        state["step"] = step
+        await booking.save_state(self.redis, chat_id, state)
+
+        known = _booking_lines_partial(state)
+        if known:
+            intro += f"\n\nУже записал:\n{known}"
+        if bad_phone:
+            intro += f"\n\nВ номере «{escape(bad_phone)}» не хватает цифр."
+        await self._ask_step(chat_id, state, intro)
+
+    async def _booking_choice(self, query: dict[str, Any], chat: dict[str, Any], key: str) -> None:
+        """Кнопки под «У вас уже есть заявка»: изменить её, записать ещё одного или оставить."""
+        chat_id = chat["id"]
+        state = await booking.get_state(self.redis, chat_id)
+        if not state or state.get("step") != "choose":
+            return
+        # Убираем кнопки: второе нажатие не начнёт запись заново
+        message_id = (query.get("message") or {}).get("message_id")
+        if message_id:
+            try:
+                await self.tg.call(
+                    "editMessageReplyMarkup",
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    reply_markup={"inline_keyboard": []},
+                )
+            except TelegramError as e:
+                log.warning("Telegram: %s", e)
+        if key == "keep":
+            await booking.clear_state(self.redis, chat_id)
+            await self.tg.send(chat_id, BOOK_KEPT.get(state.get("status"), BOOK_KEPT["new"]), MENU)
+            return
+        await self._booking_start(
+            chat, query.get("from") or {}, state.get("draft"), mode=key, edit_id=state["booking_id"]
+        )
+
+    async def _ask_step(
+        self, chat_id: int, state: dict[str, Any], prefix: str = "", greet: bool = False
+    ) -> None:
         step = state["step"]
         if step == "name":
-            text, markup = "Как вас зовут?", keyboard([[CANCEL]], placeholder="Ваше имя")
+            rows = [[state["suggest"]], [CANCEL]] if state.get("suggest") else [[CANCEL]]
+            text, markup = "Как вас зовут?", keyboard(rows, placeholder="Ваше имя")
         elif step == "phone":
-            text = ASK_PHONE.format(name=escape(state["name"]))
+            text = (GREET.format(name=escape(state["name"])) if greet else "") + ASK_PHONE
             share = {"text": SHARE_PHONE, "request_contact": True}
             markup = keyboard([[share], [CANCEL]], placeholder="+7 900 123-45-67")
         elif step == "reason":
@@ -345,6 +627,9 @@ class Bot:
         step = state["step"]
         contact = msg.get("contact")
 
+        if step == "choose":
+            await self.tg.send(chat_id, CHOOSE, choice_buttons(state.get("status") == "confirmed"))
+            return
         if not text and not (step == "phone" and contact):
             await self._ask_step(chat_id, state, TEXT_ONLY)
             return
@@ -354,7 +639,7 @@ class Bot:
             if name is None:
                 await self.tg.send(chat_id, NAME_INVALID)
                 return
-            state.update(name=name, step="phone")
+            state["name"] = name
         elif step == "phone":
             phone = booking.normalize_phone(contact["phone_number"] if contact else text)
             if phone is None and contact:
@@ -362,46 +647,90 @@ class Bot:
             if phone is None:
                 await self.tg.send(chat_id, PHONE_INVALID)
                 return
-            state.update(phone=phone, step="reason")
+            state["phone"] = phone
         elif step == "reason":
-            if len(text) > 300:
+            if len(text) > booking.MAX_REASON:
                 await self.tg.send(chat_id, TOO_LONG)
                 return
-            state.update(reason=None if text == SKIP else text, step="time")
+            state["reason"] = None if text == SKIP else text
         else:
-            if len(text) > 200:
+            if len(text) > booking.MAX_TIME:
                 await self.tg.send(chat_id, TOO_LONG)
                 return
-            await self._booking_done(msg["chat"], state, text)
+            state["time"] = text
+
+        following = booking.next_step(state)
+        if following is None:
+            await self._booking_done(msg["chat"], state)
             return
-
+        state["step"] = following
         await booking.save_state(self.redis, chat_id, state)
-        await self._ask_step(chat_id, state)
+        await self._ask_step(chat_id, state, greet=step == "name")
 
-    async def _booking_done(self, chat: dict[str, Any], state: dict[str, Any], time: str) -> None:
+    async def _booking_done(self, chat: dict[str, Any], state: dict[str, Any]) -> None:
+        fields = {
+            "name": state["name"],
+            "phone": state["phone"],
+            "reason": state.get("reason"),
+            "preferred_time": state["time"],
+        }
+        async with self.sessions() as session:
+            b = await session.get(Booking, state["edit_id"]) if state.get("edit_id") else None
+            # Пока клиент менял заявку, администратор мог её отменить — тогда это новая заявка
+            edited = b is not None and b.status in {"new", "confirmed"}
+            same_time = edited and booking.same_time(fields["preferred_time"], b.preferred_time)
+            confirmed = edited and b.status == "confirmed"
+            unchanged = same_time and all(
+                getattr(b, k) == v for k, v in fields.items() if k != "preferred_time"
+            )
+        if unchanged:
+            # Клиент ничего не поменял: статус и заявка прежние, менеджера не беспокоим
+            await booking.clear_state(self.redis, chat["id"])
+            await self.tg.send(chat["id"], NOTHING_CHANGED[b.status], MENU)
+            return
         async with self.sessions() as session:
             conv = await self._conversation(session, chat)
-            b = Booking(
-                conversation_id=conv.id,
-                name=state["name"],
-                phone=state["phone"],
-                reason=state.get("reason"),
-                preferred_time=time,
-            )
-            session.add(b)
-            session.add_all(
-                [
-                    Message(conversation_id=conv.id, role="user", text=BOOK),
-                    Message(
-                        conversation_id=conv.id,
-                        role="bot",
-                        text=booking_summary(b),
-                        reason="booking",
-                        topic="booking",
-                    ),
-                ]
+            if b is not None:
+                b = await session.get(Booking, b.id)
+            if edited:
+                before = _booking_lines(b)
+                for key, value in fields.items():
+                    setattr(b, key, value)
+                # Новое время администратор подтверждает заново; если время то же
+                # (уточнили повод или телефон), подтверждённая запись остаётся подтверждённой
+                if not same_time:
+                    b.status = "new"
+            else:
+                b = Booking(conversation_id=conv.id, **fields)
+                session.add(b)
+            # Начатая кнопкой запись — «📅 Записаться» в истории; начатая текстом — сообщение
+            # клиента там уже есть
+            if state.get("via") != "text":
+                session.add(Message(conversation_id=conv.id, role="user", text=BOOK))
+            session.add(
+                Message(
+                    conversation_id=conv.id,
+                    role="bot",
+                    text=booking_summary(b, edited),
+                    reason="booking",
+                    topic="booking",
+                )
             )
             conv.updated_at = now()
             await session.commit()
         await booking.clear_state(self.redis, chat["id"])
-        await self.tg.send(chat["id"], _book_done(b), MENU)
+        await self.tg.send(chat["id"], _book_done(b, edited), MENU)
+        if edited:
+            if confirmed and not same_time:
+                title = "Клиент хочет перенести подтверждённую запись"
+            elif confirmed:
+                title = "Клиент изменил подтверждённую запись — время прежнее"
+            else:
+                title = "Заявка изменена"
+            note = (
+                f"✏️ <b>{title}</b>\n{_client(chat)}\n\n"
+                f"<b>Было:</b>\n{before}\n\n<b>Стало:</b>\n{_booking_lines(b)}"
+            )
+        else:
+            note = f"📅 <b>Новая заявка на запись</b>\n{_client(chat)}\n\n{_booking_lines(b)}"
+        await notify_manager(self.tg, note, conv.id)

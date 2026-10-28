@@ -1,13 +1,12 @@
 "use client";
 
-import { ChevronDown, MessageSquarePlus, SendHorizontal, Sparkles, UserRound } from "lucide-react";
+import { MessageSquarePlus, SendHorizontal, Sparkles } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, ApiError } from "@/lib/api";
-import { formatSeconds } from "@/lib/format";
-import type { ChatMessage, Trace } from "@/lib/types";
-import { DocIcon } from "../documents/DocIcon";
+import type { ChatMessage } from "@/lib/types";
 import { useToast } from "../Toast";
 import { Button } from "../ui";
+import { BotBubble, Typing, UserBubble } from "./Bubbles";
 
 const STORAGE_KEY = "askbase:chat";
 
@@ -35,140 +34,6 @@ function store(id: string | null) {
     if (id) localStorage.setItem(STORAGE_KEY, id);
     else localStorage.removeItem(STORAGE_KEY);
   } catch {}
-}
-
-function TraceDetails({ trace, question }: { trace: Trace; question?: string }) {
-  const [open, setOpen] = useState<number | null>(null);
-  return (
-    <div className="mt-2 rounded-xl border border-line bg-surface p-3 text-xs text-ink-2">
-      <p className="font-medium text-ink">{trace.reason_label}</p>
-      {question && trace.query !== question && (
-        <p className="mt-1">
-          С учётом диалога искал: <span className="text-ink">«{trace.query}»</span>
-        </p>
-      )}
-      <p className="mt-1 text-ink-3">
-        Поиск {formatSeconds(trace.search_ms)}
-        {trace.llm_ms > 0 && ` · нейросеть ${formatSeconds(trace.llm_ms)}`}
-        {trace.cached && " · ответ из кеша"}
-      </p>
-      {trace.hits.length > 0 && (
-        <ol className="mt-2.5 space-y-1.5">
-          {trace.hits.map((hit) => (
-            <li key={hit.rank}>
-              <button
-                type="button"
-                onClick={() => setOpen(open === hit.rank ? null : hit.rank)}
-                className={`w-full rounded-lg border px-2.5 py-2 text-left transition-colors ${
-                  hit.used ? "border-accent/40 bg-accent-soft/60" : "border-line hover:bg-sunken"
-                }`}
-              >
-                <span className="flex items-center gap-2">
-                  <span className="w-4 shrink-0 text-ink-3 tabular-nums">{hit.rank}</span>
-                  <span className="min-w-0 flex-1 truncate text-ink">
-                    {hit.document.title}
-                    {hit.heading && hit.heading !== hit.document.title && (
-                      <span className="text-ink-3"> · {hit.heading}</span>
-                    )}
-                  </span>
-                  {hit.used && (
-                    <span className="shrink-0 rounded-md bg-accent px-1.5 py-px text-[10px] font-semibold text-white">
-                      в ответе
-                    </span>
-                  )}
-                  <span className="shrink-0 text-ink-3 tabular-nums" title="Близость к вопросу по смыслу">
-                    {hit.similarity.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
-                </span>
-                {open === hit.rank && (
-                  <span className="mt-2 block text-[13px] leading-relaxed whitespace-pre-line text-ink">
-                    {hit.text}
-                  </span>
-                )}
-              </button>
-            </li>
-          ))}
-        </ol>
-      )}
-    </div>
-  );
-}
-
-function BotBubble({ message, question }: { message: ChatMessage; question?: string }) {
-  const [details, setDetails] = useState(false);
-  const handoff = message.answered === false;
-  return (
-    <div className="rise flex max-w-[92%] flex-col items-start sm:max-w-[80%]">
-      <div
-        className={`rounded-2xl rounded-tl-md border px-4 py-3 text-sm leading-relaxed ${
-          handoff ? "border-warn/25 bg-warn-soft" : "border-line bg-surface"
-        }`}
-      >
-        {handoff && (
-          <p className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-warn">
-            <UserRound className="size-3.5" />
-            Вопрос передан администратору
-          </p>
-        )}
-        <p className="whitespace-pre-line text-ink">{message.text}</p>
-        {message.sources.length > 0 && (
-          <div className="mt-2.5 flex flex-wrap items-center gap-1.5 border-t border-line pt-2.5">
-            <span className="text-xs text-ink-3">{message.sources.length > 1 ? "Источники:" : "Источник:"}</span>
-            {message.sources.map((s) => (
-              <span
-                key={s.id}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-sunken py-0.5 pr-2 pl-0.5 text-xs font-medium text-ink"
-              >
-                <span className="scale-75">
-                  <DocIcon kind={s.kind} size="sm" />
-                </span>
-                {s.title}
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
-      {message.trace && (
-        <div className="mt-1 w-full pl-1">
-          <div className="flex flex-wrap items-center gap-x-2 text-xs text-ink-3">
-            {message.latency_ms != null && <span>ответ за {formatSeconds(message.latency_ms)}</span>}
-            {message.topic_label && <span>· {message.topic_label}</span>}
-            <button
-              type="button"
-              onClick={() => setDetails((d) => !d)}
-              className="inline-flex items-center gap-0.5 font-medium text-accent hover:underline"
-            >
-              · как бот искал ответ
-              <ChevronDown className={`size-3.5 transition-transform ${details ? "rotate-180" : ""}`} />
-            </button>
-          </div>
-          {details && <TraceDetails trace={message.trace} question={question} />}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function UserBubble({ text }: { text: string }) {
-  return (
-    <div className="rise ml-auto max-w-[85%] rounded-2xl rounded-tr-md bg-accent px-4 py-2.5 text-sm leading-relaxed whitespace-pre-line text-white sm:max-w-[75%]">
-      {text}
-    </div>
-  );
-}
-
-function Typing() {
-  return (
-    <div className="fade-in flex w-fit items-center gap-1 rounded-2xl rounded-tl-md border border-line bg-surface px-4 py-3.5">
-      {[0, 1, 2].map((i) => (
-        <span
-          key={i}
-          className="size-1.5 animate-bounce rounded-full bg-ink-3"
-          style={{ animationDelay: `${i * 140}ms` }}
-        />
-      ))}
-    </div>
-  );
 }
 
 export function ChatView() {

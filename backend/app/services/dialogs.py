@@ -60,7 +60,7 @@ async def ask(
     question: str,
     visitor: str,
     use_history: bool = True,
-) -> tuple[Message, Message]:
+) -> tuple[Message, Message, AnswerResult]:
     """Вопрос клиента → ответ бота; оба сообщения сохраняются в диалоге.
 
     use_history=False — вопрос самостоятельный (кнопка в Telegram): без истории ответ
@@ -84,4 +84,4 @@ async def ask(
     session.add_all([user, bot])
     conversation.updated_at = now()
     await session.commit()
-    return user, bot
+    return user, bot, result

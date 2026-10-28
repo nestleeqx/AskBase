@@ -77,6 +77,8 @@ export type ChatMessage = {
   role: "user" | "bot" | "operator";
   text: string;
   answered: boolean | null;
+  /** Служебные сообщения бота: booking — заявка на запись, operator — клиент позвал администратора */
+  reason: "booking" | "operator" | null;
   topic: string | null;
   topic_label: string | null;
   sources: Source[];
@@ -93,4 +95,50 @@ export type SearchResult = {
   took_ms: number;
   embedding_model: string;
   results: SearchHit[];
+};
+
+export type DialogLast = { role: ChatMessage["role"]; text: string; created_at: string };
+
+export type DialogSummary = {
+  id: string;
+  /** Имя клиента в Telegram */
+  title: string;
+  username: string | null;
+  /** Вымышленный демо-диалог: виден всем, ответить в нём нельзя */
+  demo: boolean;
+  /** С какого момента клиент ждёт человека */
+  waiting_since: string | null;
+  /** До какого времени отвечает администратор, а бот молчит */
+  operator_until: string | null;
+  updated_at: string;
+  messages_count: number;
+  last: DialogLast | null;
+};
+
+export type BookingStatus = "new" | "confirmed" | "cancelled";
+
+export type Booking = {
+  id: string;
+  conversation_id: string;
+  client: string;
+  name: string;
+  phone: string;
+  reason: string | null;
+  preferred_time: string;
+  status: BookingStatus;
+  created_at: string;
+  demo: boolean;
+};
+
+export type DialogList = { dialogs: DialogSummary[]; waiting: number };
+export type DialogDetail = DialogSummary & { messages: ChatMessage[]; bookings: Booking[] };
+export type BookingList = { bookings: Booking[]; new: number };
+
+export type TelegramStatus = {
+  enabled: boolean;
+  username: string | null;
+  /** Свой Telegram-чат привязан: его переписка видна в «Диалогах» */
+  linked: boolean;
+  /** Уведомления менеджеру настроены */
+  manager: boolean;
 };

@@ -1,6 +1,16 @@
 "use client";
 
-import { ArrowUpRight, FileStack, Globe, Menu, MessagesSquare, SearchCheck, X } from "lucide-react";
+import {
+  ArrowUpRight,
+  CalendarCheck,
+  FileStack,
+  Globe,
+  Inbox,
+  Menu,
+  MessagesSquare,
+  SearchCheck,
+  X,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
@@ -61,7 +71,19 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
     },
     { href: "/admin/search", label: "Проверка поиска", icon: <SearchCheck className="size-4" /> },
   ];
-  const chat: Item = { href: "/admin/chat", label: "Тестовый чат", icon: <MessagesSquare className="size-4" /> };
+  // Бейджи: сколько клиентов ждут администратора и сколько заявок ждут звонка
+  const { data: dialogs } = useSWR(["dialogs", "", false], () => api.dialogs(), { refreshInterval: 10000 });
+  const { data: bookings } = useSWR("bookings", api.bookings, { refreshInterval: 10000 });
+  const bot: Item[] = [
+    { href: "/admin/dialogs", label: "Диалоги", icon: <Inbox className="size-4" />, badge: dialogs?.waiting },
+    {
+      href: "/admin/bookings",
+      label: "Заявки на запись",
+      icon: <CalendarCheck className="size-4" />,
+      badge: bookings?.new,
+    },
+    { href: "/admin/chat", label: "Тестовый чат", icon: <MessagesSquare className="size-4" /> },
+  ];
   const site: Item = {
     href: CLINIC_RULES_PATH,
     label: "Сайт клиники",
@@ -72,14 +94,18 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-16 items-center px-5">
-        <Link href="/admin/documents" aria-label="AskBase — к документам" onClick={onNavigate}>
+        <Link href="/admin/dialogs" aria-label="AskBase — к диалогам" onClick={onNavigate}>
           <Logo />
         </Link>
       </div>
       <nav className="flex-1 space-y-6 overflow-y-auto px-3 pt-2 scrollbar-thin">
         <div>
           <p className="mb-1.5 px-2.5 text-[11px] font-medium text-ink-3">Бот</p>
-          <NavItem item={chat} onNavigate={onNavigate} />
+          <div className="space-y-0.5">
+            {bot.map((item) => (
+              <NavItem key={item.href} item={item} onNavigate={onNavigate} />
+            ))}
+          </div>
         </div>
         <div>
           <p className="mb-1.5 px-2.5 text-[11px] font-medium text-ink-3">База знаний</p>
@@ -166,7 +192,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
 
       <header className="sticky top-0 z-20 border-b border-line bg-canvas/85 backdrop-blur">
         <div className="flex h-16 items-center gap-3 px-4 sm:px-6">
-          <Link href="/admin/documents" aria-label="AskBase — к документам" className="lg:hidden">
+          <Link href="/admin/dialogs" aria-label="AskBase — к диалогам" className="lg:hidden">
             <Logo />
           </Link>
           <div className="ml-auto flex items-center gap-2.5">

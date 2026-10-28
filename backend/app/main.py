@@ -6,11 +6,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from app.api import chat, documents, misc, search
+from app.api import chat, dialogs, documents, misc, search, telegram
 from app.config import get_settings
 from app.db import SessionLocal, init_db
 from app.embeddings import create_embedder
 from app.llm import create_provider
+from app.services.demo_dialogs import ensure_demo_dialogs
 from app.services.redis_store import RateLimitExceeded, get_redis
 from app.services.seed import ensure_seed
 
@@ -22,6 +23,7 @@ LIMIT_MESSAGES = {
     "search": "Лимит демо: {limit} поисков в час",
     "upload": "Лимит демо: {limit} загрузок в час",
     "chat": "Лимит демо: {limit} вопросов в час",
+    "reply": "Лимит демо: {limit} ответов в час",
 }
 
 
@@ -32,6 +34,7 @@ async def lifespan(app: FastAPI):
     app.state.embedder = create_embedder(settings)
     app.state.llm = create_provider(settings)
     await ensure_seed(SessionLocal, app.state.embedder, get_redis())
+    await ensure_demo_dialogs(SessionLocal)
     yield
     await app.state.embedder.aclose()
     await app.state.llm.aclose()
@@ -83,3 +86,5 @@ app.include_router(misc.router)
 app.include_router(documents.router)
 app.include_router(search.router)
 app.include_router(chat.router)
+app.include_router(dialogs.router)
+app.include_router(telegram.router)

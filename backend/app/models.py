@@ -24,6 +24,11 @@ def now() -> datetime:
     return datetime.now(UTC)
 
 
+# Владелец вымышленных демо-диалогов: их видят все посетители, но менять не может никто.
+# Настоящие id посетителей длиннее, поэтому совпасть с ним не могут
+DEMO_VISITOR = "demo"
+
+
 class Document(Base):
     """Документ базы знаний. visitor_id пуст у документов клиники, общих для всех;
     у своих документов гостя — его id: их видит только он."""
@@ -91,12 +96,18 @@ class Conversation(Base):
     __tablename__ = "conversations"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
-    # Чей это диалог в демо: тестовый чат видит только тот, кто его начал
+    # Чей это диалог в демо: тестовый чат видит только тот, кто его начал; Telegram-чат —
+    # тот, кто привязал его через «Открыть бота». DEMO_VISITOR — вымышленные диалоги для всех
     visitor_id: Mapped[str | None] = mapped_column(String(64), index=True)
     # test — тестовый чат в админке, telegram — переписка с ботом
     channel: Mapped[str] = mapped_column(String(16), default="test")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    # С какого момента клиент ждёт человека: бот не нашёл ответа или клиент позвал
+    # администратора. Сбрасывается ответом администратора
+    waiting_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # До какого времени отвечает администратор, а бот молчит. Продлевается каждым ответом
+    operator_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     messages: Mapped[list["Message"]] = relationship(
         back_populates="conversation",

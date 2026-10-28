@@ -1,4 +1,17 @@
-import type { ChatReply, Conversation, Doc, DocumentChunks, DocumentList, SearchResult } from "./types";
+import type {
+  Booking,
+  BookingList,
+  BookingStatus,
+  ChatReply,
+  Conversation,
+  DialogDetail,
+  DialogList,
+  Doc,
+  DocumentChunks,
+  DocumentList,
+  SearchResult,
+  TelegramStatus,
+} from "./types";
 
 export const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
 
@@ -84,4 +97,21 @@ export const api = {
   ask: (question: string, conversationId?: string | null) =>
     request<ChatReply>("/api/chat", json("POST", { question, conversation_id: conversationId ?? undefined })),
   conversation: (id: string) => request<Conversation>(`/api/chat/${id}`),
+
+  dialogs: (q = "", waiting = false) => {
+    const params = new URLSearchParams();
+    if (q) params.set("q", q);
+    if (waiting) params.set("waiting", "true");
+    const query = params.toString();
+    return request<DialogList>(`/api/dialogs${query ? `?${query}` : ""}`);
+  },
+  dialog: (id: string) => request<DialogDetail>(`/api/dialogs/${id}`),
+  reply: (id: string, text: string) => request<DialogDetail>(`/api/dialogs/${id}/reply`, json("POST", { text })),
+  release: (id: string) => request<DialogDetail>(`/api/dialogs/${id}/release`, json("POST")),
+
+  bookings: () => request<BookingList>("/api/bookings"),
+  setBooking: (id: string, status: BookingStatus) => request<Booking>(`/api/bookings/${id}`, json("PATCH", { status })),
+
+  telegram: () => request<TelegramStatus>("/api/telegram"),
+  telegramLink: () => request<{ url: string }>("/api/telegram/link", json("POST")),
 };

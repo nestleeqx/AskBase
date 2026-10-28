@@ -44,7 +44,12 @@ REASONS = {
     "not_in_docs": "Нейросеть не нашла ответа во фрагментах",
     "no_sources": "Нейросеть не подтвердила ответ фрагментами",
     "error": "Сервис ответов был недоступен",
+    "booking_intent": "Клиент хочет записаться — бот начал запись по шагам",
+    "operator_intent": "Клиент попросил администратора",
 }
+# Тексты для тестового чата: в Telegram вместо них запускается запись по шагам
+# или передача администратору
+OPERATOR_INTENT = "Передал ваш запрос администратору — он ответит в ближайшее время."
 
 
 @dataclass
@@ -54,9 +59,17 @@ class Source:
     kind: str
 
 
+def booking_hint() -> str:
+    return (
+        "Чтобы записаться, нажмите «📅 Записаться» в Telegram-боте клиники — он спросит имя, "
+        f"телефон и удобное время. Или позвоните: {get_settings().clinic_phone}."
+    )
+
+
 @dataclass
 class AnswerResult:
-    answered: bool
+    # None — клиент не спрашивал, а хотел записаться
+    answered: bool | None
     # Текст для клиента без строки об источнике — её добавляет канал (чат, Telegram)
     text: str
     sources: list[Source]
@@ -69,6 +82,10 @@ class AnswerResult:
     llm_ms: int = 0
     total_ms: int = 0
     cached: bool = False
+    # question, booking или operator — чего хочет клиент
+    intent: str = "question"
+    # Что клиент уже сообщил для записи: name, phone, reason, preferred_time
+    draft: dict[str, str] = field(default_factory=dict)
 
 
 def _ms(start: float) -> int:
@@ -150,6 +167,15 @@ async def answer_question(
             total_ms=_ms(started),
         )
 
+    if reply.intent != "question":
+        booking = reply.intent == "booking"
+        result = handoff("booking_intent" if booking else "operator_intent", reply.topic)
+        result.intent = reply.intent
+        result.answered = None if booking else False
+        result.text = booking_hint() if booking else OPERATOR_INTENT
+        result.draft = reply.booking.model_dump() if booking else {}
+        result.cached = cached
+        return result
     if not reply.answered or not reply.answer.strip():
         return handoff("not_in_docs", reply.topic)
     used = [hits[i - 1] for i in dict.fromkeys(reply.source_ids) if 1 <= i <= len(hits)]

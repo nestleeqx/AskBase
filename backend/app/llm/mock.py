@@ -1,7 +1,8 @@
 """Шаблонные ответы без внешнего API — для тестов и запуска без ключей.
 
 Отвечает текстом первого найденного фрагмента, если в нём есть слова вопроса, иначе
-передаёт вопрос администратору. Разбирает промпт из app/services/prompts.py.
+передаёт вопрос администратору. «Запишите…» — желание записаться, «позовите
+администратора» — просьба о человеке. Разбирает промпт из app/services/prompts.py.
 """
 
 import asyncio
@@ -43,16 +44,40 @@ class MockProvider(LLMProvider):
             previous = _line_after(user, "Клиент:")
             return json.dumps({"query": f"{previous} {question}".strip()}, ensure_ascii=False)
 
+        lowered = question.lower()
+        intent = (
+            "booking"
+            if re.search(r"запиш|записат", lowered)
+            else "operator"
+            if re.search(r"администратор|живого|человек", lowered)
+            else "question"
+        )
+        draft = {"name": "", "phone": "", "reason": "", "preferred_time": ""}
+        if intent != "question":
+            return json.dumps(
+                {
+                    "intent": intent,
+                    "answered": False,
+                    "answer": "",
+                    "source_ids": [],
+                    "topic": "booking" if intent == "booking" else "other",
+                    "booking": draft,
+                },
+                ensure_ascii=False,
+            )
+
         fragments = {int(n): text.strip() for n, text in _FRAGMENT.findall(user)}
         first = fragments.get(1, "")
         answered = bool(first) and bool(_stems(question) & _stems(first))
         text = first.split("\n", 1)[-1][:300] if answered else ""
         return json.dumps(
             {
+                "intent": "question",
                 "answered": answered,
                 "answer": text,
                 "source_ids": [1] if answered else [],
                 "topic": "other",
+                "booking": draft,
             },
             ensure_ascii=False,
         )

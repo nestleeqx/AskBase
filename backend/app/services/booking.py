@@ -13,6 +13,8 @@ from app.services.redis_store import PREFIX
 
 STEPS = ("name", "phone", "reason", "time")
 STATE_TTL = 3600
+MAX_REASON = 300
+MAX_TIME = 200
 
 _LETTER = re.compile(r"[a-zа-яё]", re.IGNORECASE)
 
@@ -59,3 +61,53 @@ def normalize_phone(text: str) -> str | None:
     if 11 <= len(digits) <= 15 and text.strip().startswith("+"):
         return "+" + digits
     return None
+
+
+def next_step(state: dict[str, Any]) -> str | None:
+    """Первый шаг, на который клиент ещё не ответил. Пропущенный повод — тоже ответ."""
+    return next((step for step in STEPS if step not in state), None)
+
+
+def from_draft(draft: dict[str, str]) -> tuple[dict[str, Any], str | None]:
+    """Что клиент написал сам, когда попросил записать его, — в ответы на шаги записи.
+
+    Нейросеть переносит слова клиента как есть, поэтому каждое поле проверяется так же,
+    как ответ на шаге. Второе значение — номер, в котором не хватает цифр: бот переспросит.
+    """
+    state: dict[str, Any] = {}
+    name = valid_name(draft.get("name", ""))
+    if name:
+        state["name"] = name
+    raw_phone = clean(draft.get("phone", ""))
+    phone = normalize_phone(raw_phone) if raw_phone else None
+    if phone:
+        state["phone"] = phone
+    reason = clean(draft.get("reason", ""))
+    if reason:
+        state["reason"] = reason[:MAX_REASON]
+    time = clean(draft.get("preferred_time", ""))
+    if time:
+        state["time"] = time[:MAX_TIME]
+    # Переспрашиваем про номер, только если клиент его правда писал — с цифрами
+    bad = raw_phone if raw_phone and not phone and re.search(r"\d", raw_phone) else None
+    return state, bad
+
+
+_TIME_FILLER = re.compile(r"\b(на|в|во|к)\b|[^\w:]", re.IGNORECASE)
+
+
+def same_time(a: str, b: str) -> bool:
+    """«на завтра на 12:30» и «завтра в 12:30» — одно и то же время, а не перенос."""
+
+    def norm(text: str) -> str:
+        return " ".join(_TIME_FILLER.sub(" ", text.lower().replace("ё", "е")).split())
+
+    return bool(a) and norm(a) == norm(b)
+
+
+def changes(state: dict[str, Any], old: Any) -> bool:
+    """Меняет ли написанное клиентом (имя, телефон, повод, время) его прежнюю заявку."""
+    if "time" in state and not same_time(state["time"], old.preferred_time):
+        return True
+    current = {"name": old.name, "phone": old.phone, "reason": old.reason}
+    return any(key in state and state[key] != value for key, value in current.items())

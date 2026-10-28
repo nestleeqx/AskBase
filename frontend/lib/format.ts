@@ -28,3 +28,33 @@ export function formatSize(bytes: number) {
 }
 
 export const KIND_LABELS = { pdf: "PDF", docx: "DOCX", txt: "TXT", url: "Страница сайта" } as const;
+
+const timeFmt = new Intl.DateTimeFormat("ru-RU", { hour: "2-digit", minute: "2-digit" });
+const dayFmt = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short" });
+
+function dayDiff(date: Date, now = new Date()) {
+  const start = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  return Math.round((start(now) - start(date)) / 86_400_000);
+}
+
+/** «14:05», «вчера, 14:05», «12 окт., 14:05» — время сообщения. */
+export function formatTime(iso: string) {
+  const date = new Date(iso);
+  const days = dayDiff(date);
+  const time = timeFmt.format(date);
+  if (days === 0) return time;
+  if (days === 1) return `вчера, ${time}`;
+  return `${dayFmt.format(date)}, ${time}`;
+}
+
+/** Коротко для списка: «сейчас», «5 мин», «14:05», «вчера», «12 окт.». */
+export function formatShortTime(iso: string) {
+  const date = new Date(iso);
+  const minutes = Math.floor((Date.now() - date.getTime()) / 60_000);
+  if (minutes < 1) return "сейчас";
+  if (minutes < 60) return `${minutes} мин`;
+  const days = dayDiff(date);
+  if (days === 0) return timeFmt.format(date);
+  if (days === 1) return "вчера";
+  return dayFmt.format(date);
+}
