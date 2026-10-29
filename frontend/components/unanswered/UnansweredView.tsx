@@ -40,7 +40,7 @@ function AnswerForm({
   }
 
   const field =
-    "w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-sm outline-none placeholder:text-ink-3 focus:border-accent/40 focus:ring-4 focus:ring-accent-soft";
+    "w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-sm outline-none placeholder:text-ink-3 focus:border-accent/50 focus:ring-4 focus:ring-accent/10";
 
   return (
     <form onSubmit={submit} className="mt-3 space-y-2.5 rounded-xl bg-sunken/60 p-3">

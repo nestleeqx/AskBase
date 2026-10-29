@@ -5,10 +5,13 @@
 
 import json
 import re
+from datetime import date, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from redis.asyncio import Redis
 
+from app.config import get_settings
 from app.services.redis_store import PREFIX
 
 STEPS = ("name", "phone", "reason", "time")
@@ -93,14 +96,55 @@ def from_draft(draft: dict[str, str]) -> tuple[dict[str, Any], str | None]:
     return state, bad
 
 
+_MONTHS = (
+    "января февраля марта апреля мая июня июля августа сентября октября ноября декабря".split()
+)
+_RELATIVE_DAYS = {"сегодня": 0, "завтра": 1, "послезавтра": 2}
+_RELATIVE = re.compile(r"\b(сегодня|послезавтра|завтра)\b", re.IGNORECASE)
+# «в субботу» → «в субботу, 1 ноября»; уже с датой («в субботу, 1 ноября») не трогаем
+_WEEKDAYS = ("понедельник", "вторник", "среду", "четверг", "пятницу", "субботу", "воскресенье")
+_WEEKDAY = re.compile(r"\b(в|во)\s+(" + "|".join(_WEEKDAYS) + r")\b(?!,?\s*\d)", re.IGNORECASE)
+
+
+def _day(d: date) -> str:
+    return f"{d.day} {_MONTHS[d.month - 1]}"
+
+
+def clinic_today() -> date:
+    return datetime.now(ZoneInfo(get_settings().clinic_timezone)).date()
+
+
+def pin_dates(text: str, today: date | None = None) -> str:
+    """«завтра в 12:30» → «30 октября в 12:30»: заявка хранится с датой, и через день
+    в админке не висит «завтра». Дни недели — ближайший такой день после сегодняшнего."""
+    today = today or clinic_today()
+    text = _RELATIVE.sub(lambda m: _day(today + timedelta(days=_RELATIVE_DAYS[m[1].lower()])), text)
+
+    def weekday(m: re.Match[str]) -> str:
+        ahead = (_WEEKDAYS.index(m[2].lower()) - today.weekday()) % 7 or 7
+        return f"{m[0]}, {_day(today + timedelta(days=ahead))}"
+
+    return _WEEKDAY.sub(weekday, text)
+
+
+def time_buttons(today: date | None = None) -> list[list[str]]:
+    """Готовые ответы на «Когда удобно?» — сразу с днём: голое «Днём» администратору ничего
+    не говорит. В воскресенье клиника закрыта — тогда предлагаем понедельник."""
+    tomorrow = (today or clinic_today()) + timedelta(days=1)
+    day = "В понедельник" if tomorrow.weekday() == 6 else "Завтра"
+    return [[f"{day} утром", f"{day} днём"], [f"{day} вечером", "В ближайшее время"]]
+
+
 _TIME_FILLER = re.compile(r"\b(на|в|во|к)\b|[^\w:]", re.IGNORECASE)
 
 
 def same_time(a: str, b: str) -> bool:
-    """«на завтра на 12:30» и «завтра в 12:30» — одно и то же время, а не перенос."""
+    """«на завтра на 12:30» и «30 октября в 12:30» (так «завтра» сохранено) — одно и то же время,
+    а не перенос."""
 
     def norm(text: str) -> str:
-        return " ".join(_TIME_FILLER.sub(" ", text.lower().replace("ё", "е")).split())
+        text = pin_dates(text).lower().replace("ё", "е")
+        return " ".join(_TIME_FILLER.sub(" ", text).split())
 
     return bool(a) and norm(a) == norm(b)
 

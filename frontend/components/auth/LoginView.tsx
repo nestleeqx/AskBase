@@ -73,8 +73,8 @@ export function LoginView() {
       </p>
 
       <div className="mt-8 grid w-full max-w-3xl gap-4 md:grid-cols-2">
-        <section className="rise flex flex-col rounded-3xl border border-accent/30 bg-surface p-6 shadow-[0_20px_40px_-28px_rgba(13,148,136,.6)]">
-          <span className="grid size-11 place-items-center rounded-2xl bg-accent-soft text-accent">
+        <section className="rise flex flex-col rounded-3xl border border-accent/30 bg-surface p-6 shadow-[0_24px_50px_-30px_rgba(17,23,22,.45)]">
+          <span className="grid size-11 place-items-center rounded-2xl bg-accent text-white">
             <Eye className="size-5" />
           </span>
           <h2 className="mt-4 text-lg font-semibold">Гость</h2>
@@ -121,7 +121,7 @@ export function LoginView() {
                 placeholder={ownerOff ? "Вход владельца не настроен" : "Пароль владельца"}
                 aria-label="Пароль владельца"
                 disabled={!!ownerOff}
-                className="h-11 w-full rounded-xl border border-line bg-surface pr-3 pl-10 text-sm outline-none placeholder:text-ink-3 focus:border-accent/40 focus:ring-4 focus:ring-accent-soft disabled:bg-sunken"
+                className="h-11 w-full rounded-xl border border-line bg-surface pr-3 pl-10 text-sm outline-none placeholder:text-ink-3 focus:border-accent/50 focus:ring-4 focus:ring-accent/10 disabled:bg-sunken"
               />
             </label>
             {error && <p className="mt-2 text-sm text-danger">{error}</p>}

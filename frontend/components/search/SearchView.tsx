@@ -1,9 +1,10 @@
 "use client";
 
 import { ArrowRight, Search, Sparkles, Type } from "lucide-react";
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { api } from "@/lib/api";
 import { formatSeconds, plural } from "@/lib/format";
+import { revealOnMobile } from "@/lib/reveal";
 import type { SearchHit, SearchResult } from "@/lib/types";
 import { DocIcon } from "../documents/DocIcon";
 import { useToast } from "../Toast";
@@ -73,7 +74,7 @@ function HitCard({ hit, question }: { hit: SearchHit; question: string }) {
       style={{ animationDelay: `${hit.rank * 40}ms` }}
     >
       <div className="flex items-start gap-3">
-        <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-ink text-xs font-semibold text-white tabular-nums">
+        <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-accent text-xs font-semibold text-white tabular-nums">
           {hit.rank}
         </span>
         <div className="min-w-0 flex-1">
@@ -136,7 +137,7 @@ function Intro() {
   return (
     <Panel className="mt-6 p-5 sm:p-6">
       <h2 className="font-semibold">Как бот ищет ответ</h2>
-      <ol className="mt-3 grid gap-3 text-sm text-ink-2 sm:grid-cols-3">
+      <ol className="mt-3 grid grid-cols-1 gap-3 text-sm text-ink-2 sm:grid-cols-3">
         {[
           ["Ищет по смыслу", "«чистка зубов» найдёт «профессиональную гигиену», даже если слов нет в вопросе."],
           ["Ищет по словам", "Фамилии врачей, названия процедур и цифры находятся точно."],
@@ -158,6 +159,15 @@ export function SearchView() {
   const [result, setResult] = useState<SearchResult | null>(null);
   const [loading, setLoading] = useState(false);
   const toast = useToast();
+  const resultsRef = useRef<HTMLElement>(null);
+  const revealNext = useRef(false);
+
+  // Новый результат отрисован — на телефоне показываем его, а не форму поиска
+  useEffect(() => {
+    if (!revealNext.current) return;
+    revealNext.current = false;
+    revealOnMobile(resultsRef.current);
+  }, [result]);
 
   async function run(q: string) {
     const text = q.trim();
@@ -165,7 +175,9 @@ export function SearchView() {
     setQuestion(text);
     setLoading(true);
     try {
-      setResult(await api.search(text));
+      const found = await api.search(text);
+      revealNext.current = true;
+      setResult(found);
     } catch (e) {
       toast.error(e);
     } finally {
@@ -196,9 +208,9 @@ export function SearchView() {
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
               maxLength={500}
-              placeholder="Например: сколько стоит чистка зубов?"
+              placeholder="Сколько стоит чистка зубов?"
               aria-label="Вопрос клиента"
-              className="h-11 w-full rounded-xl border border-line bg-surface pr-3 pl-9 text-sm outline-none placeholder:text-ink-3 focus:border-accent/40 focus:ring-4 focus:ring-accent-soft"
+              className="h-11 w-full rounded-xl border border-line bg-surface pr-3 pl-9 text-sm outline-none placeholder:text-ink-3 focus:border-accent/50 focus:ring-4 focus:ring-accent/10"
             />
           </div>
           <Button type="submit" variant="primary" className="h-11 px-5" loading={loading} disabled={!question.trim()}>
@@ -212,7 +224,7 @@ export function SearchView() {
               type="button"
               onClick={() => run(example)}
               disabled={loading}
-              className="inline-flex items-center gap-1 rounded-full border border-line bg-surface px-3 py-1 text-xs text-ink-2 transition-colors hover:border-accent/40 hover:bg-accent-soft hover:text-accent-ink disabled:opacity-50"
+              className="inline-flex items-center gap-1 rounded-full border border-line bg-surface px-3 py-1 text-left text-xs text-ink-2 transition-colors hover:border-accent/40 hover:bg-accent-soft hover:text-accent-ink disabled:opacity-50"
             >
               {example}
               <ArrowRight className="size-3" />
@@ -232,7 +244,11 @@ export function SearchView() {
       )}
 
       {result && (
-        <section className={`mt-6 transition-opacity ${loading ? "opacity-50" : ""}`} aria-live="polite">
+        <section
+          ref={resultsRef}
+          className={`mt-6 scroll-mt-20 transition-opacity ${loading ? "opacity-50" : ""}`}
+          aria-live="polite"
+        >
           <p className="mb-3 px-1 text-sm text-ink-2">
             {result.results.length
               ? `${result.results.length} ${plural(result.results.length, ["фрагмент", "фрагмента", "фрагментов"])} по вопросу «${result.question}» · поиск занял ${formatSeconds(result.took_ms)}`

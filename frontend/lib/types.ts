@@ -110,6 +110,8 @@ export type DialogSummary = {
   demo: boolean;
   /** С какого момента клиент ждёт человека */
   waiting_since: string | null;
+  /** Когда клиенту последний раз понадобился человек — по этому времени админка подаёт сигнал */
+  attention_at: string | null;
   /** До какого времени отвечает администратор, а бот молчит */
   operator_until: string | null;
   updated_at: string;
@@ -129,11 +131,14 @@ export type Booking = {
   preferred_time: string;
   status: BookingStatus;
   created_at: string;
+  /** Последнее действие клиента в боте: создал, изменил или отменил заявку. Администратор его не меняет */
+  client_changed_at: string;
   demo: boolean;
 };
 
 export type DialogList = { dialogs: DialogSummary[]; waiting: number };
-export type DialogDetail = DialogSummary & { messages: ChatMessage[]; bookings: Booking[] };
+/** messages — последние сообщения переписки; has_more — есть более ранние, их подгружают прокруткой вверх */
+export type DialogDetail = DialogSummary & { messages: ChatMessage[]; has_more: boolean; bookings: Booking[] };
 export type BookingList = { bookings: Booking[]; new: number };
 
 export type TelegramStatus = {

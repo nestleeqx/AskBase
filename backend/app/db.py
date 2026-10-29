@@ -33,6 +33,8 @@ MIGRATIONS = [
     "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS waiting_since TIMESTAMPTZ",
     "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS operator_until TIMESTAMPTZ",
     "ALTER TABLE messages ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ",
+    "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS client_changed_at TIMESTAMPTZ",
+    "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS attention_at TIMESTAMPTZ",
 ]
 
 

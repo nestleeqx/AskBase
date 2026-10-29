@@ -109,6 +109,10 @@ class Conversation(Base):
     # С какого момента клиент ждёт человека: бот не нашёл ответа или клиент позвал
     # администратора. Сбрасывается ответом администратора
     waiting_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Последний раз, когда клиенту понадобился человек: позвал администратора, бот не нашёл
+    # ответа, клиент написал, пока отвечает администратор. Служебные сообщения о записи его
+    # не меняют — по нему админка сигналит «клиент ждёт администратора»
+    attention_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # До какого времени отвечает администратор, а бот молчит. Продлевается каждым ответом
     operator_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
@@ -180,6 +184,9 @@ class Booking(Base):
     # new — ждёт звонка администратора, confirmed — подтверждена, cancelled — отменена
     status: Mapped[str] = mapped_column(String(12), default="new")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    # Когда клиент последний раз создал, изменил или отменил заявку в боте. Действия
+    # администратора (подтвердил, отменил) его не меняют — по нему админка сигналит о новом
+    client_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=now)
 
 
 class BotProfile(Base):

@@ -4,6 +4,7 @@ import { RotateCcw, Save } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import useSWR from "swr";
 import { api } from "@/lib/api";
+import { maskPhone } from "@/lib/format";
 import type { BotSettings, BotSettingsValues, Tone } from "@/lib/types";
 import { ScopeNote } from "../ScopeNote";
 import { useToast } from "../Toast";
@@ -17,7 +18,7 @@ const TONE_HINTS: Record<Tone, string> = {
 };
 
 const FIELD =
-  "w-full rounded-xl border border-line bg-surface px-3.5 text-sm outline-none placeholder:text-ink-3 focus:border-accent/40 focus:ring-4 focus:ring-accent-soft";
+  "w-full rounded-xl border border-line bg-surface px-3.5 text-sm outline-none placeholder:text-ink-3 focus:border-accent/50 focus:ring-4 focus:ring-accent/10";
 
 function pick(s: BotSettings): BotSettingsValues {
   return { greeting: s.greeting, tone: s.tone, phone: s.phone, hours: s.hours };
@@ -79,7 +80,7 @@ function SettingsForm({ initial, onSaved }: { initial: BotSettings; onSaved: (s:
   }
 
   return (
-    <form onSubmit={save} className="mt-5 grid gap-4 xl:grid-cols-[1fr_340px]">
+    <form onSubmit={save} className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-[1fr_340px]">
       <Panel className="space-y-5 p-4 sm:p-5">
         <label className="block">
           <span className="text-sm font-medium text-ink">Приветствие</span>
@@ -91,7 +92,7 @@ function SettingsForm({ initial, onSaved }: { initial: BotSettings; onSaved: (s:
             minLength={10}
             maxLength={1000}
             required
-            className={`mt-2 resize-y py-2.5 leading-relaxed ${FIELD}`}
+            className={`mt-2 resize-none py-2.5 leading-relaxed ${FIELD}`}
           />
         </label>
 
@@ -109,7 +110,7 @@ function SettingsForm({ initial, onSaved }: { initial: BotSettings; onSaved: (s:
                 onClick={() => set("tone", tone)}
                 className={`rounded-xl border px-3 py-2.5 text-left transition-colors ${
                   values.tone === tone
-                    ? "border-accent/50 bg-accent-soft ring-2 ring-accent/20"
+                    ? "border-accent bg-accent-soft/40 ring-2 ring-accent/15"
                     : "border-line hover:bg-sunken"
                 }`}
               >
@@ -125,9 +126,13 @@ function SettingsForm({ initial, onSaved }: { initial: BotSettings; onSaved: (s:
             <span className="text-sm font-medium text-ink">Телефон для срочных вопросов</span>
             <input
               value={values.phone}
-              onChange={(e) => set("phone", e.target.value)}
-              minLength={5}
-              maxLength={40}
+              onChange={(e) => set("phone", maskPhone(e.target.value, values.phone))}
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel"
+              placeholder="+7 (___) ___-__-__"
+              pattern="\+7 \(\d{3}\) \d{3}-\d{2}-\d{2}"
+              title="Номер полностью: +7 (495) 555-12-34"
               required
               className={`mt-2 h-10 ${FIELD}`}
             />
@@ -145,23 +150,25 @@ function SettingsForm({ initial, onSaved }: { initial: BotSettings; onSaved: (s:
           </label>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 border-t border-line pt-4">
+        {/* На телефоне — «Сохранить» сверху во всю ширину, сброс под ним; на широком — в одну строку */}
+        <div className="flex flex-col-reverse gap-2 border-t border-line pt-4 sm:flex-row sm:items-center">
           {initial.custom && (
             <Button
               type="button"
               variant="ghost"
+              className="max-sm:w-full"
               loading={busy === "reset"}
               disabled={!!busy}
               onClick={reset}
               icon={<RotateCcw className="size-4" />}
             >
-              Как было по умолчанию
+              Вернуть стандартные
             </Button>
           )}
           <Button
             type="submit"
             variant="primary"
-            className="ml-auto"
+            className="max-sm:w-full sm:ml-auto"
             loading={busy === "save"}
             disabled={!dirty || !!busy}
             icon={<Save className="size-4" />}

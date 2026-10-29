@@ -133,7 +133,8 @@ export const api = {
     const query = params.toString();
     return request<DialogList>(`/api/dialogs${query ? `?${query}` : ""}`);
   },
-  dialog: (id: string) => request<DialogDetail>(`/api/dialogs/${id}`),
+  /** Последние limit сообщений переписки: при прокрутке вверх админка просит больше */
+  dialog: (id: string, limit = 50) => request<DialogDetail>(`/api/dialogs/${id}?limit=${limit}`),
   reply: (id: string, text: string) => request<DialogDetail>(`/api/dialogs/${id}/reply`, json("POST", { text })),
   release: (id: string) => request<DialogDetail>(`/api/dialogs/${id}/release`, json("POST")),
 

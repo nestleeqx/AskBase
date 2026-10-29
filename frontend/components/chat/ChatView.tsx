@@ -127,7 +127,7 @@ export function ChatView() {
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-line bg-sunken/50">
         <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto px-3 py-4 scrollbar-thin sm:px-5">
           <div className="flex max-w-[92%] items-start gap-2.5 sm:max-w-[80%]">
-            <span className="grid size-8 shrink-0 place-items-center rounded-full bg-accent text-white">
+            <span className="grid size-8 shrink-0 place-items-center rounded-full bg-gradient-to-br from-[#5eead4] to-[#0d9488] text-white">
               <Sparkles className="size-4" />
             </span>
             <p className="rounded-2xl rounded-tl-md border border-line bg-surface px-4 py-3 text-sm leading-relaxed whitespace-pre-line text-ink">
@@ -157,7 +157,7 @@ export function ChatView() {
                   key={example}
                   type="button"
                   onClick={() => send(example)}
-                  className="shrink-0 rounded-full border border-line bg-surface px-3 py-1 text-xs text-ink-2 transition-colors hover:border-accent/40 hover:bg-accent-soft hover:text-accent-ink"
+                  className="shrink-0 rounded-full border border-line bg-surface px-3 py-1 text-xs text-ink-2 transition-colors hover:border-accent/40 hover:bg-accent-soft/50 hover:text-accent-ink"
                 >
                   {example}
                 </button>
@@ -170,9 +170,9 @@ export function ChatView() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               maxLength={500}
-              placeholder="Напишите вопрос как клиент…"
+              placeholder="Ваш вопрос боту…"
               aria-label="Вопрос боту"
-              className="h-11 min-w-0 flex-1 rounded-xl border border-line bg-surface px-3.5 text-sm outline-none placeholder:text-ink-3 focus:border-accent/40 focus:ring-4 focus:ring-accent-soft"
+              className="h-11 min-w-0 flex-1 rounded-xl border border-line bg-surface px-3.5 text-sm outline-none placeholder:text-ink-3 focus:border-accent/50 focus:ring-4 focus:ring-accent/10"
             />
             <Button
               type="submit"

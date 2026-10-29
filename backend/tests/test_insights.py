@@ -81,7 +81,7 @@ async def test_settings_per_visitor(client, redis):
     body = {
         "greeting": "Привет! Я бот «Белой линии», спрашивайте.",
         "tone": "friendly",
-        "phone": "+7 (343) 000-00-00",
+        "phone": "+7 (495) 000-00-00",
         "hours": "ежедневно 8:00–22:00",
     }
     data = (await client.put("/api/settings", json=body)).json()
@@ -105,7 +105,7 @@ async def test_settings_per_visitor(client, redis):
         await bot.handle(message("/start"))
         assert tg.texts()[-1] == body["greeting"]
         await bot.handle(message("👤 Связаться с администратором"))
-        assert "ежедневно 8:00–22:00" in tg.texts()[-1] and "+7 (343) 000-00-00" in tg.texts()[-1]
+        assert "ежедневно 8:00–22:00" in tg.texts()[-1] and "+7 (495) 000-00-00" in tg.texts()[-1]
     finally:
         async with SessionLocal() as session:
             row = await session.scalar(select(TelegramChat).where(TelegramChat.chat_id == CHAT))

@@ -9,11 +9,13 @@ import logging
 import uuid
 from datetime import timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from app.config import get_settings
 from app.models import (
     DEMO_VISITOR,
     Booking,
@@ -23,12 +25,13 @@ from app.models import (
     TelegramChat,
     now,
 )
+from app.services import booking
 
 log = logging.getLogger(__name__)
 
 DEMO_FILE = Path(__file__).resolve().parents[1] / "seed" / "demo-dialogs.json"
 # Увеличьте, если поменялся demo-dialogs.json, — диалоги пересоздадутся при следующем запуске
-VERSION = 2
+VERSION = 4
 REFRESH_HOURS = 24
 
 
@@ -57,11 +60,16 @@ async def ensure_demo_dialogs(sessions: async_sessionmaker) -> None:
             for d in await session.scalars(select(Document).where(Document.seed_key.is_not(None)))
         }
         start = now()
+        tz = ZoneInfo(get_settings().clinic_timezone)
         for i, d in enumerate(dialogs):
             base = start - timedelta(hours=d["hours_ago"])
 
             def at(minute: float, base=base):
                 return base + timedelta(minutes=minute)
+
+            def pinned(text: str, minute: float) -> str:
+                # «в субботу утром» → с датой от дня, когда заявка как будто оставлена
+                return booking.pin_dates(text, at(minute).astimezone(tz).date())
 
             conv = Conversation(id=_id(d["key"]), visitor_id=DEMO_VISITOR, channel="telegram")
             waiting = None
@@ -73,6 +81,7 @@ async def ensure_demo_dialogs(sessions: async_sessionmaker) -> None:
             conv.created_at = at(0)
             conv.updated_at = at(d["messages"][-1]["minute"])
             conv.waiting_since = waiting
+            conv.attention_at = waiting
             session.add(conv)
             # Сначала диалог: у чата и заявок нет связи с ним в ORM, порядок вставки задаём сами
             await session.flush()
@@ -95,7 +104,9 @@ async def ensure_demo_dialogs(sessions: async_sessionmaker) -> None:
                     Message(
                         conversation_id=conv.id,
                         role=m["role"],
-                        text=m["text"],
+                        text=pinned(m["text"], m["minute"])
+                        if m.get("reason") == "booking"
+                        else m["text"],
                         answered=m.get("answered"),
                         reason=m.get("reason"),
                         topic=m.get("topic"),
@@ -114,9 +125,10 @@ async def ensure_demo_dialogs(sessions: async_sessionmaker) -> None:
                         name=b["name"],
                         phone=b["phone"],
                         reason=b["reason"],
-                        preferred_time=b["preferred_time"],
+                        preferred_time=pinned(b["preferred_time"], b["minute"]),
                         status=b["status"],
                         created_at=at(b["minute"]),
+                        client_changed_at=at(b["minute"]),
                     )
                 )
         try:

@@ -45,7 +45,7 @@ function BookingCard({ booking, onChange }: { booking: Booking; onChange: (b: Bo
   return (
     <li className="rise flex flex-col rounded-2xl border border-line bg-surface p-4 sm:p-5">
       <div className="flex items-start gap-3">
-        <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-accent-soft text-accent">
+        <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-sunken text-ink">
           <CalendarCheck className="size-4.5" />
         </span>
         <div className="min-w-0 flex-1">
@@ -65,8 +65,8 @@ function BookingCard({ booking, onChange }: { booking: Booking; onChange: (b: Bo
 
       <dl className="mt-3.5 mb-4 space-y-1.5 text-sm">
         {rows.map(([label, value]) => (
-          <div key={label} className="flex gap-2">
-            <dt className="w-28 shrink-0 text-ink-3">{label}</dt>
+          <div key={label} className="flex flex-col min-[400px]:flex-row min-[400px]:gap-2">
+            <dt className="shrink-0 text-xs text-ink-3 min-[400px]:w-28 min-[400px]:text-sm">{label}</dt>
             <dd className="min-w-0 text-ink">{value}</dd>
           </div>
         ))}
@@ -186,7 +186,7 @@ export function BookingsView() {
       </div>
 
       {!data ? (
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {[0, 1, 2].map((i) => (
             <div key={i} className="skeleton h-56 rounded-2xl" />
           ))}
@@ -194,7 +194,7 @@ export function BookingsView() {
       ) : items.length === 0 ? (
         <p className="mt-10 text-center text-sm text-ink-3">Заявок нет</p>
       ) : (
-        <ul className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <ul className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {items.map((b) => (
             <BookingCard key={b.id} booking={b} onChange={changed} />
           ))}

@@ -3,7 +3,7 @@ from sqlalchemy import select
 
 from app.config import get_settings
 from app.db import SessionLocal
-from app.models import Conversation, TelegramChat
+from app.models import Conversation, Message, TelegramChat
 from app.services import bot as botmod
 from app.services.bot import Bot
 from app.services.telegram import set_telegram
@@ -126,6 +126,28 @@ async def test_link_and_operator_reply(client, tg):
     assert "Источник: Прайс-лист" in tg.texts()[-1]
 
 
+async def test_long_dialog_comes_in_pages(client, tg):
+    conv_id = await link(client, tg)
+    async with SessionLocal() as session:
+        session.add_all(
+            Message(conversation_id=conv_id, role="user", text=f"Сообщение {i}") for i in range(60)
+        )
+        await session.commit()
+
+    latest = (await client.get(f"/api/dialogs/{conv_id}")).json()
+    total = latest["messages_count"]
+    assert total == 60
+    # Сначала — последние 50, ранние подгружаются отдельно
+    assert len(latest["messages"]) == 50 and latest["has_more"] is True
+    assert latest["messages"][-1]["text"] == "Сообщение 59"
+
+    first = latest["messages"][0]["id"]
+    older = (await client.get(f"/api/dialogs/{conv_id}?before={first}")).json()
+    assert older["has_more"] is False and older["messages_count"] == total
+    assert len(older["messages"]) == total - 50
+    assert older["messages"][-1]["id"] < first
+
+
 async def test_manager_notifications(client, tg):
     get_settings().manager_chat_id = MANAGER
     await tg.bot.handle(message("Почините карбюратор у мотоцикла?"))
@@ -169,6 +191,8 @@ async def test_bookings(client, tg):
 
     resp = await client.patch(f"/api/bookings/{own['id']}", json={"status": "confirmed"})
     assert resp.json()["status"] == "confirmed"
+    # Подтвердил администратор, а не клиент — сигнала в админке об этом не будет
+    assert resp.json()["client_changed_at"] == own["client_changed_at"]
     other = (await client.get("/api/bookings", headers={"X-Visitor-Id": OTHER})).json()
     assert len(other["bookings"]) == 2
 

@@ -2,25 +2,29 @@ import {
   ArrowRight,
   BarChart3,
   BookOpenCheck,
+  Check,
   CalendarCheck,
+  ChevronRight,
   CircleHelp,
   Clock,
   FileText,
   Headset,
-  Layers,
   MessageCircleQuestion,
   MessagesSquare,
   Moon,
   Repeat,
   SearchCheck,
   ShieldCheck,
+  Star,
   Upload,
+  Zap,
 } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { CountUp } from "@/components/landing/CountUp";
 import { HeroChat } from "@/components/landing/HeroChat";
+import { HeroOrbit } from "@/components/landing/HeroOrbit";
 import { Reveal } from "@/components/landing/Reveal";
 import { TelegramCta } from "@/components/landing/TelegramCta";
 import { Logo } from "@/components/Logo";
@@ -32,7 +36,7 @@ export const metadata: Metadata = {
 };
 
 const PRIMARY =
-  "inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-accent px-6 font-medium whitespace-nowrap text-white shadow-[0_10px_30px_-10px_rgba(13,148,136,.8)] transition-colors hover:bg-accent-hover";
+  "inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-ink px-6 font-medium whitespace-nowrap text-white shadow-[0_10px_30px_-12px_rgba(16,32,31,.6)] transition-colors hover:bg-black";
 const SECONDARY =
   "inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-line bg-surface px-6 font-medium whitespace-nowrap text-ink transition-colors hover:bg-sunken";
 
@@ -99,7 +103,7 @@ const FEATURES: { icon: ReactNode; title: string; text: string; tone: string }[]
   {
     icon: <Headset className="size-5" />,
     title: "Передача человеку",
-    text: "Администратор отвечает клиенту прямо из админки, бот в это время молчит. «Вернуть боту» — одной кнопкой.",
+    text: "Администратор отвечает клиенту прямо из админки, бот в это время молчит. «Включить бота» — одной кнопкой.",
     tone: "bg-warn-soft text-warn",
   },
   {
@@ -116,17 +120,23 @@ const FEATURES: { icon: ReactNode; title: string; text: string; tone: string }[]
   },
 ];
 
+// Каналы и форматы, с которыми работает бот, — вместо строки логотипов «нам доверяют»
+const WORKS_WITH = ["PDF", "DOCX", "TXT", "Страница сайта", "Telegram", "OpenAI", "YandexGPT", "PostgreSQL + pgvector"];
+
 export default function Home() {
   return (
-    <div className="min-h-full overflow-x-clip">
-      <header className="sticky top-0 z-30 border-b border-line/70 bg-canvas/80 backdrop-blur">
-        <div className="mx-auto flex h-16 max-w-6xl items-center gap-6 px-4 sm:px-6">
+    <div className="min-h-full overflow-x-clip bg-surface">
+      <header className="sticky top-3 z-30 px-3 sm:px-6">
+        <div className="mx-auto flex h-14 max-w-5xl items-center gap-6 rounded-2xl border border-line bg-surface/85 pr-2 pl-4 shadow-[0_8px_30px_-18px_rgba(16,32,31,.35)] backdrop-blur">
           <Link href="/" aria-label="AskBase — на главную">
             <Logo />
           </Link>
-          <nav className="ml-auto hidden items-center gap-6 text-sm text-ink-2 md:flex">
+          <nav className="mx-auto hidden items-center gap-7 text-sm text-ink-2 md:flex">
             <a href="#how" className="hover:text-ink">
               Как работает
+            </a>
+            <a href="#demo" className="hover:text-ink">
+              В Telegram
             </a>
             <a href="#features" className="hover:text-ink">
               Возможности
@@ -135,52 +145,73 @@ export default function Home() {
               Точность
             </a>
           </nav>
-          <Link
-            href="/login"
-            className="ml-auto inline-flex h-10 items-center gap-1.5 rounded-xl bg-accent px-4 text-sm font-medium text-white transition-colors hover:bg-accent-hover md:ml-0"
-          >
-            Открыть демо
-          </Link>
+          <div className="ml-auto flex items-center gap-2 md:ml-0">
+            <Link
+              href="/login"
+              className="hidden h-9 items-center rounded-xl border border-line bg-sunken/60 px-3.5 text-sm font-medium text-ink transition-colors hover:bg-sunken sm:inline-flex"
+            >
+              Войти
+            </Link>
+            <Link
+              href="/login"
+              className="inline-flex h-9 items-center rounded-xl bg-ink px-3.5 text-sm font-medium text-white transition-colors hover:bg-black"
+            >
+              Открыть демо
+            </Link>
+          </div>
         </div>
       </header>
 
-      <section className="relative">
-        <div className="dot-grid pointer-events-none absolute inset-0 -z-10" />
-        <div className="mx-auto grid max-w-6xl items-center gap-12 px-4 pt-12 pb-16 sm:px-6 md:pt-20 lg:grid-cols-[1.05fr_1fr]">
-          <div>
-            <p className="rise inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1 text-xs font-medium text-ink-2 shadow-[0_1px_2px_rgba(16,32,31,.05)]">
-              <span className="size-1.5 rounded-full bg-accent" />
-              Telegram-бот на базе знаний компании
-            </p>
-            <h1
-              className="rise mt-5 text-4xl leading-[1.05] font-semibold tracking-tight text-balance text-ink sm:text-5xl"
-              style={{ animationDelay: "80ms" }}
-            >
-              Бот отвечает клиентам по вашим документам{" "}
-              <span className="bg-gradient-to-r from-accent to-[#4fd1bd] bg-clip-text text-transparent">
-                и не выдумывает
-              </span>
-            </h1>
-            <p className="rise mt-5 max-w-xl text-lg leading-relaxed text-ink-2" style={{ animationDelay: "160ms" }}>
-              AskBase знает ваш прайс, врачей и правила. Отвечает на вопросы в Telegram круглосуточно, записывает на
-              приём, а если ответа в документах нет — честно передаёт вопрос администратору.
-            </p>
-            <div className="rise mt-8 flex flex-col gap-3 sm:flex-row" style={{ animationDelay: "240ms" }}>
-              <Link href="/login" className={PRIMARY}>
-                Открыть демо-админку
-                <ArrowRight className="size-4" />
-              </Link>
-              <TelegramCta className={SECONDARY} />
-            </div>
-            <p className="rise mt-4 text-sm text-ink-3" style={{ animationDelay: "320ms" }}>
-              Без регистрации · демо-клиника «Белая линия» с прайсом, врачами и правилами записи
-            </p>
-          </div>
-          <HeroChat />
+      <HeroOrbit>
+        <p className="rise flex flex-wrap items-center justify-center gap-x-5 gap-y-1 text-sm text-ink-2">
+          <span className="inline-flex items-center gap-1.5">
+            <Star className="size-4 fill-accent text-accent" />
+            19 из 20 верных ответов
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <Zap className="size-4 fill-[#f5b301] text-[#f5b301]" />
+            ответ за ≈2 с
+          </span>
+        </p>
+        <h1
+          className="rise mt-5 text-4xl leading-[1.05] font-semibold tracking-tight text-balance text-ink sm:text-6xl"
+          style={{ animationDelay: "80ms" }}
+        >
+          Бот отвечает клиентам по вашим документам
+        </h1>
+        <p
+          className="rise mt-5 max-w-xl text-base leading-relaxed text-ink-2 sm:text-lg"
+          style={{ animationDelay: "160ms" }}
+        >
+          Прайс, врачи и правила — в базе знаний. Бот отвечает в Telegram круглосуточно, записывает на приём, а если
+          ответа в документах нет — честно передаёт вопрос администратору.
+        </p>
+        <div
+          className="rise mt-8 flex w-full flex-col justify-center gap-3 sm:w-auto sm:flex-row"
+          style={{ animationDelay: "240ms" }}
+        >
+          <Link href="/login" className={PRIMARY}>
+            Открыть демо-админку
+            <ArrowRight className="size-4" />
+          </Link>
+          <TelegramCta className={SECONDARY} />
+        </div>
+      </HeroOrbit>
+
+      <section className="border-y border-line bg-canvas/60">
+        <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+          <p className="text-center text-xs font-medium tracking-wide text-ink-3 uppercase">Работает с</p>
+          <ul className="mt-4 flex flex-wrap items-center justify-center gap-x-9 gap-y-3 text-[15px] font-semibold text-ink-3">
+            {WORKS_WITH.map((item) => (
+              <li key={item} className="transition-colors hover:text-ink">
+                {item}
+              </li>
+            ))}
+          </ul>
         </div>
       </section>
 
-      <section id="accuracy" className="mx-auto grid max-w-6xl scroll-mt-16 gap-3 px-4 py-12 sm:grid-cols-3 sm:px-6">
+      <section id="accuracy" className="mx-auto grid max-w-6xl scroll-mt-24 gap-3 px-4 py-16 sm:grid-cols-3 sm:px-6">
         {[
           {
             value: <CountUp to={19} />,
@@ -194,59 +225,57 @@ export default function Home() {
           },
           { value: "≈2", suffix: " с", text: "медиана времени ответа — от вопроса до готового ответа с источником" },
         ].map((m, i) => (
-          <Reveal key={m.text} delay={i * 100} className="rounded-2xl border border-line bg-surface p-6">
-            <p className="text-4xl font-semibold tracking-tight text-ink">
+          <Reveal key={m.text} delay={i * 100} className="rounded-3xl border border-line bg-surface p-7">
+            <p className="text-5xl font-semibold tracking-tight text-ink">
               {m.value}
               <span className="text-ink-3">{m.suffix}</span>
             </p>
-            <p className="mt-2 text-sm text-ink-2">{m.text}</p>
+            <p className="mt-3 text-sm leading-relaxed text-ink-2">{m.text}</p>
           </Reveal>
         ))}
       </section>
 
       <section className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
-        <Reveal>
-          <h2 className="text-3xl font-semibold tracking-tight text-ink">Знакомо?</h2>
+        <Reveal className="text-center">
+          <h2 className="text-3xl font-semibold tracking-tight text-ink sm:text-4xl">Знакомо?</h2>
         </Reveal>
-        <div className="mt-8 grid gap-4 md:grid-cols-3">
+        <div className="mt-10 grid gap-4 md:grid-cols-3">
           {PROBLEMS.map((p, i) => (
-            <Reveal key={p.title} delay={i * 120} className="rounded-2xl border border-line bg-surface p-6">
-              <span className="grid size-11 place-items-center rounded-xl bg-danger-soft text-danger">{p.icon}</span>
-              <h3 className="mt-4 font-semibold text-ink">{p.title}</h3>
+            <Reveal key={p.title} delay={i * 120} className="rounded-3xl border border-line bg-surface p-7">
+              <span className="grid size-11 place-items-center rounded-2xl bg-sunken text-ink">{p.icon}</span>
+              <h3 className="mt-5 font-semibold text-ink">{p.title}</h3>
               <p className="mt-2 text-sm leading-relaxed text-ink-2">{p.text}</p>
             </Reveal>
           ))}
         </div>
       </section>
 
-      <section id="how" className="scroll-mt-16 bg-ink text-white">
-        <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6">
-          <Reveal>
-            <h2 className="text-3xl font-semibold tracking-tight">Как работает</h2>
-            <p className="mt-2 max-w-xl text-white/60">
+      <section id="how" className="scroll-mt-24 px-3 py-12 sm:px-6">
+        <div className="mx-auto max-w-6xl overflow-hidden rounded-[2rem] bg-ink px-5 py-14 text-white sm:px-10">
+          <Reveal className="text-center">
+            <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">Как работает</h2>
+            <p className="mx-auto mt-3 max-w-xl text-white/60">
               От вопроса клиента до ответа со ссылкой на документ — 2–3 секунды.
             </p>
           </Reveal>
-          <Reveal className="relative mt-10">
-            {/* Линия между шагами прорисовывается слева направо; карточки непрозрачные — она видна только в промежутках */}
-            <div className="absolute top-11 right-[12%] left-[12%] hidden h-px bg-white/10 lg:block">
-              <div className="step-line h-full bg-gradient-to-r from-accent via-[#4fd1bd] to-glow" />
-            </div>
-            <ol className="relative grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Reveal className="mt-12">
+            <ol className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {STEPS.map((s, i) => (
                 <li
                   key={s.title}
-                  className="rise relative rounded-2xl bg-[#1b2c2b] p-5"
+                  className="rise relative rounded-2xl bg-white/[.05] p-6 ring-1 ring-white/10 transition-colors hover:bg-white/[.08]"
                   style={{ animationDelay: `${i * 150}ms` }}
                 >
-                  <span className="flex items-center justify-between">
-                    <span className="grid size-12 place-items-center rounded-2xl bg-accent text-white shadow-[0_8px_24px_-8px_rgba(13,148,136,.9)]">
-                      {s.icon}
-                    </span>
-                    <span className="text-sm font-semibold text-white/40">0{i + 1}</span>
-                  </span>
-                  <h3 className="mt-4 font-semibold">{s.title}</h3>
+                  <span className="grid size-12 place-items-center rounded-2xl bg-white text-ink">{s.icon}</span>
+                  <p className="mt-5 text-xs font-semibold tracking-wide text-glow-strong uppercase">Шаг {i + 1}</p>
+                  <h3 className="mt-1.5 font-semibold">{s.title}</h3>
                   <p className="mt-1.5 text-sm leading-relaxed text-white/65">{s.text}</p>
+                  {/* Стрелка к следующему шагу — в промежутке между карточками, только в один ряд */}
+                  {i < STEPS.length - 1 && (
+                    <span className="absolute top-1/2 -right-[22px] z-10 hidden size-7 -translate-y-1/2 place-items-center rounded-full bg-ink text-white/70 ring-1 ring-white/15 lg:grid">
+                      <ChevronRight className="size-4" />
+                    </span>
+                  )}
                 </li>
               ))}
             </ol>
@@ -254,10 +283,41 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="mx-auto grid max-w-6xl items-center gap-10 px-4 py-16 sm:px-6 lg:grid-cols-2">
+      <section
+        id="demo"
+        className="mx-auto grid max-w-6xl scroll-mt-24 grid-cols-1 items-center gap-12 px-4 py-16 sm:px-6 lg:grid-cols-2"
+      >
         <Reveal>
+          <p className="text-sm font-medium text-accent">Переписка в Telegram</p>
+          <h2 className="mt-2 text-3xl font-semibold tracking-tight text-balance text-ink sm:text-4xl">
+            Отвечает по прайсу, помнит диалог, зовёт человека
+          </h2>
+          <p className="mt-4 text-ink-2">
+            Ответы настоящего бота демо-клиники: цена — со ссылкой на прайс-лист, уточнение «а гарантия?» — про ту же
+            коронку, а вопрос, которого нет в документах, — администратору.
+          </p>
+          <ul className="mt-6 space-y-2.5 text-sm text-ink-2">
+            {[
+              "Кнопки «Цены», «Записаться», «Связаться с администратором»",
+              "Запись по шагам: имя, телефон кнопкой, повод, удобное время",
+              "«Я записан?» и /cancel — бот знает заявки клиента",
+            ].map((t) => (
+              <li key={t} className="flex gap-2.5">
+                <Check className="mt-0.5 size-4 shrink-0 text-accent" />
+                {t}
+              </li>
+            ))}
+          </ul>
+        </Reveal>
+        <Reveal delay={150}>
+          <HeroChat />
+        </Reveal>
+      </section>
+
+      <section className="mx-auto grid max-w-6xl grid-cols-1 items-center gap-12 px-4 py-16 sm:px-6 lg:grid-cols-2">
+        <Reveal className="lg:order-2">
           <p className="text-sm font-medium text-accent">Честность важнее ответа любой ценой</p>
-          <h2 className="mt-2 text-3xl font-semibold tracking-tight text-balance text-ink">
+          <h2 className="mt-2 text-3xl font-semibold tracking-tight text-balance text-ink sm:text-4xl">
             Нет в документах — нет ответа. Есть администратор
           </h2>
           <p className="mt-4 text-ink-2">
@@ -279,7 +339,7 @@ export default function Home() {
         </Reveal>
         <Reveal
           delay={150}
-          className="rounded-3xl border border-line bg-surface p-5 shadow-[0_24px_50px_-32px_rgba(16,32,31,.4)]"
+          className="rounded-3xl border border-line bg-surface p-5 shadow-[0_24px_50px_-32px_rgba(16,32,31,.4)] lg:order-1"
         >
           <p className="text-xs font-medium text-ink-3">Как бот искал ответ</p>
           <p className="mt-2 text-sm font-medium text-ink">«Сколько стоит ремонт машины?»</p>
@@ -311,42 +371,46 @@ export default function Home() {
         </Reveal>
       </section>
 
-      <section id="features" className="mx-auto max-w-6xl scroll-mt-16 px-4 py-12 sm:px-6">
-        <Reveal>
-          <h2 className="text-3xl font-semibold tracking-tight text-ink">Возможности</h2>
+      <section id="features" className="mx-auto max-w-6xl scroll-mt-24 px-4 py-12 sm:px-6">
+        <Reveal className="text-center">
+          <h2 className="text-3xl font-semibold tracking-tight text-ink sm:text-4xl">Возможности</h2>
+          <p className="mx-auto mt-3 max-w-xl text-ink-2">Всё, что нужно администратору, — в одной админке.</p>
         </Reveal>
-        <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {FEATURES.map((f, i) => (
             <Reveal
               key={f.title}
               delay={(i % 3) * 100}
-              className="group rounded-2xl border border-line bg-surface p-6 transition-[box-shadow,translate] duration-300 hover:-translate-y-1 hover:shadow-[0_20px_40px_-24px_rgba(16,32,31,.35)]"
+              className="group rounded-3xl border border-line bg-surface p-7 transition-[box-shadow,translate] duration-300 hover:-translate-y-1 hover:shadow-[0_20px_40px_-24px_rgba(16,32,31,.35)]"
             >
               <span
-                className={`grid size-11 place-items-center rounded-xl transition-transform duration-300 group-hover:scale-110 ${f.tone}`}
+                className={`grid size-11 place-items-center rounded-2xl transition-transform duration-300 group-hover:scale-110 ${f.tone}`}
               >
                 {f.icon}
               </span>
-              <h3 className="mt-4 font-semibold text-ink">{f.title}</h3>
+              <h3 className="mt-5 font-semibold text-ink">{f.title}</h3>
               <p className="mt-1.5 text-sm leading-relaxed text-ink-2">{f.text}</p>
             </Reveal>
           ))}
         </div>
       </section>
 
-      <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6">
-        <Reveal className="relative overflow-hidden rounded-3xl bg-ink p-6 text-white sm:p-12">
-          <div className="hero-glow pointer-events-none absolute -inset-20 opacity-80" />
+      <section className="px-3 py-16 sm:px-6">
+        <Reveal className="relative mx-auto max-w-6xl overflow-hidden rounded-[2rem] bg-ink p-8 text-center text-white sm:p-14">
+          <div className="hero-glow pointer-events-none absolute -inset-20 opacity-70" />
           <div className="relative">
-            <h2 className="max-w-2xl text-3xl font-semibold tracking-tight text-balance">
+            <h2 className="mx-auto max-w-2xl text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
               Спросите бота клиники «Белая линия» о чём угодно
             </h2>
-            <p className="mt-3 max-w-xl text-white/70">
+            <p className="mx-auto mt-3 max-w-xl text-white/70">
               Цены, врачи, подготовка к процедурам, запись. Загрузите свой документ — и посмотрите, как бот начнёт
               отвечать по нему через несколько секунд.
             </p>
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <Link href="/login" className={PRIMARY}>
+            <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
+              <Link
+                href="/login"
+                className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-white px-6 font-medium whitespace-nowrap text-ink transition-colors hover:bg-white/90"
+              >
                 Открыть демо-админку
                 <ArrowRight className="size-4" />
               </Link>
@@ -357,19 +421,9 @@ export default function Home() {
       </section>
 
       <footer className="border-t border-line">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-4 gap-y-2 px-4 py-6 text-sm text-ink-3 sm:px-6">
-          <span className="inline-flex items-center gap-1.5">
-            <Layers className="size-4" />
-            AskBase — демо-проект. Клиника «Белая линия», врачи и цены вымышлены.
-          </span>
-          <a
-            href="https://github.com/nestleeqx/AskBase"
-            target="_blank"
-            rel="noreferrer"
-            className="ml-auto hover:text-ink"
-          >
-            Код на GitHub
-          </a>
+        <div className="mx-auto flex max-w-6xl flex-col items-center gap-2 px-4 py-8 text-center text-sm text-ink-3 sm:flex-row sm:justify-between sm:px-6 sm:text-left">
+          <Logo />
+          <p className="text-balance">Демо-проект. Клиника «Белая линия», врачи и цены вымышлены.</p>
         </div>
       </footer>
     </div>

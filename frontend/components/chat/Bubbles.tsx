@@ -200,7 +200,7 @@ export function OperatorBubble({ message }: { message: ChatMessage }) {
 export function UserBubble({ text, side = "right", time }: { text: string; side?: Side; time?: string }) {
   if (side === "right")
     return (
-      <div className="rise ml-auto max-w-[85%] rounded-2xl rounded-tr-md bg-accent px-4 py-2.5 text-sm leading-relaxed whitespace-pre-line text-white sm:max-w-[75%]">
+      <div className="rise ml-auto w-fit max-w-[85%] rounded-2xl rounded-tr-md bg-accent px-4 py-2.5 text-sm leading-relaxed whitespace-pre-line text-white sm:max-w-[75%]">
         {text}
       </div>
     );

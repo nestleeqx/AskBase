@@ -1,8 +1,11 @@
+from datetime import date
+
 import pytest
 from sqlalchemy import select
 
 from app.db import SessionLocal
-from app.models import Booking, Message, TelegramChat
+from app.models import Booking, Conversation, Message, TelegramChat
+from app.services import booking
 from app.services import bot as botmod
 from app.services.answer import HANDOFF
 from app.services.bot import Bot
@@ -176,7 +179,7 @@ async def test_booking_flow(bot):
             "Анна",
             "+7 (900) 123-45-67",
             None,
-            "В субботу утром",
+            booking.pin_dates("В субботу утром"),
             "new",
         )
     msgs = await chat_messages()
@@ -201,7 +204,7 @@ async def test_booking_validates_and_cancels(bot):
 
 async def test_operator_request_logged(bot):
     reply = await say(bot, botmod.OPERATOR)
-    assert "+7 (343) 200-18-18" in reply
+    assert "+7 (495) 200-18-18" in reply
     msgs = await chat_messages()
     assert [(m.role, m.reason) for m in msgs] == [("user", None), ("bot", "operator")]
 
@@ -284,7 +287,10 @@ async def test_booking_from_text_prefills_known_fields(bot):
 
     # Остальное уже известно — после телефона заявка сразу готова
     done = await say(bot, "+7 945 480 41 00")
-    assert "Заявка на запись принята" in done and "Удобное время: завтра в 12:30" in done
+    # «Завтра» сохранено датой — через день в админке не будет висеть «завтра»
+    pinned = booking.pin_dates("завтра в 12:30")
+    assert "Заявка на запись принята" in done and f"Удобное время: {pinned}" in done
+    assert "завтра" not in pinned
     msgs = await chat_messages()
     # Кнопку «Записаться» клиент не нажимал — в истории его собственное сообщение
     assert botmod.BOOK not in [m.text for m in msgs]
@@ -400,6 +406,18 @@ def test_smalltalk_reply():
     assert smalltalk_reply("Здравствуйте, хочу записаться") is None
 
 
+async def test_cancel_edit_keeps_booking(bot):
+    await book(bot, "Анна", "+7 900 123-45-67", "Чистка", "Утром")
+    await set_booking(status="confirmed")
+    await say(bot, botmod.BOOK)
+    await bot.handle(button("bk:edit"))
+    # «Отмена» посреди правки отменяет правку, а не запись
+    assert await say(bot, botmod.CANCEL) == botmod.BOOK_KEPT["confirmed"]
+    bookings = await bookings_of_chat()
+    assert (bookings[0].status, bookings[0].preferred_time) == ("confirmed", "Утром")
+    assert (await chat_messages())[-1].text.startswith("Запись без изменений:")
+
+
 async def test_edit_open_booking(bot):
     await book(bot, "Анна", "+7 900 123-45-67", "Чистка", "Утром")
     await say(bot, botmod.BOOK)
@@ -431,6 +449,34 @@ async def test_book_another_person(bot):
     assert [b.name for b in await bookings_of_chat()] == ["Анна", "Миша"]
 
 
+async def chat_conversation() -> Conversation:
+    async with SessionLocal() as session:
+        row = await session.get(TelegramChat, CHAT)
+        return await session.get(Conversation, row.conversation_id)
+
+
+async def test_only_human_requests_raise_attention(bot):
+    # Клиент позвал администратора — админка подаст сигнал «ждёт администратора»
+    await say(bot, botmod.OPERATOR)
+    called = (await chat_conversation()).attention_at
+    assert called is not None
+    # Запись в том же диалоге — служебные сообщения, а не новый зов: сигнал будет только о заявке
+    await book(bot, "Анна", "+7 900 123-45-67", "Чистка", "Утром")
+    conv = await chat_conversation()
+    assert conv.attention_at == called and conv.updated_at > called
+
+
+async def test_same_person_same_time_is_not_duplicated(bot):
+    await book(bot, "Игорь", "+7 900 123-45-67", "Чистка", "на завтра на 12:30")
+    await say(bot, botmod.BOOK)
+    await bot.handle(button("bk:new"))
+    # Тот же человек и то же время, хоть телефон и повод другие, — вторую заявку не создаём
+    for text in ["игорь", "+7 900 122-31-12", "Пропустить", "завтра в 12:30"]:
+        await bot.handle(message(text))
+    assert bot.tg.texts()[-1] == botmod.ALREADY_BOOKED["new"]
+    assert [b.name for b in await bookings_of_chat()] == ["Игорь"]
+
+
 async def set_booking(**fields) -> None:
     async with SessionLocal() as session:
         b = await session.get(Booking, (await bookings_of_chat())[0].id)
@@ -456,7 +502,8 @@ async def test_move_confirmed_booking(bot, redis):
         # Предпоследнее — ответ клиенту, последнее — уведомление менеджеру
         assert "Заявка обновлена" in bot.tg.texts()[-2]
         assert "Клиент хочет перенести подтверждённую запись" in note
-        assert "<b>Было:</b>" in note and "Удобное время: В пятницу вечером" in note
+        friday = booking.pin_dates("В пятницу вечером")
+        assert "<b>Было:</b>" in note and f"Удобное время: {friday}" in note
         # Новое время подтверждает администратор — заявка снова ждёт звонка
         bookings = await bookings_of_chat()
         assert len(bookings) == 1
@@ -508,6 +555,30 @@ def test_same_time():
     assert same_time("на завтра на 12:30", "завтра в 12:30")
     assert not same_time("завтра в 15:00", "завтра в 12:30")
     assert not same_time("", "завтра")
+    # Сохранённое датой «завтра» совпадает с новым «завтра»
+    assert same_time("завтра в 12:30", booking.pin_dates("на завтра на 12:30"))
+
+
+def test_time_buttons_name_the_day():
+    thursday, saturday = date(2026, 10, 29), date(2026, 10, 31)
+    assert booking.time_buttons(thursday)[0] == ["Завтра утром", "Завтра днём"]
+    # Завтра воскресенье — клиника закрыта, предлагаем понедельник
+    assert booking.time_buttons(saturday)[0][0] == "В понедельник утром"
+    # Кнопка сохраняется датой
+    assert booking.pin_dates("Завтра днём", thursday) == "30 октября днём"
+    assert booking.pin_dates("В понедельник утром", saturday) == "В понедельник, 2 ноября утром"
+
+
+def test_pin_dates():
+    thursday = date(2026, 10, 29)
+    assert booking.pin_dates("завтра в 12:30", thursday) == "30 октября в 12:30"
+    assert booking.pin_dates("Сегодня вечером", thursday) == "29 октября вечером"
+    assert booking.pin_dates("послезавтра", thursday) == "31 октября"
+    assert booking.pin_dates("в субботу утром", thursday) == "в субботу, 31 октября утром"
+    # Тот же день недели — следующая неделя; уже с датой — не трогаем
+    assert booking.pin_dates("в четверг", thursday) == "в четверг, 5 ноября"
+    assert booking.pin_dates("в субботу, 31 октября", thursday) == "в субботу, 31 октября"
+    assert booking.pin_dates("после 18:00", thursday) == "после 18:00"
 
 
 async def test_keep_confirmed_booking(bot):
@@ -550,6 +621,8 @@ async def test_cancel_confirmed_booking(bot, redis):
     get_settings().manager_chat_id = 4242
     try:
         await book(bot, "Анна", "+7 900 123-45-67", "Чистка", "Утром")
+        created = (await bookings_of_chat())[0].client_changed_at
+        assert created is not None
         await set_booking(status="confirmed")
         reply = await say(bot, "/cancel")
         assert reply.startswith("Отменить запись?") and "Имя: Анна" in reply
@@ -560,7 +633,10 @@ async def test_cancel_confirmed_booking(bot, redis):
         # Клиенту — что запись отменена, менеджеру — уведомление
         assert bot.tg.texts()[-2] == botmod.BOOKING_CANCELLED_DONE
         assert "Клиент отменил запись" in bot.tg.texts()[-1]
-        assert (await bookings_of_chat())[0].status == "cancelled"
+        cancelled = (await bookings_of_chat())[0]
+        assert cancelled.status == "cancelled"
+        # Отмену сделал клиент — админка увидит новое действие и подаст сигнал
+        assert cancelled.client_changed_at > created
         assert (await chat_messages())[-1].text.startswith("Клиент отменил запись: Анна")
         # Отменять больше нечего
         assert await say(bot, "/cancel") == botmod.NOTHING_TO_CANCEL

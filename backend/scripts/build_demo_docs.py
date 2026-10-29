@@ -20,7 +20,15 @@ SOURCE, DOCS = SEED / "source", SEED / "docs"
 SITE_PAGE = Path(__file__).resolve().parents[2] / "frontend/public/clinic/pravila-zapisi.html"
 
 CLINIC = "Белая линия"
-CONTACTS = "Екатеринбург, ул. Светлая, 18 · +7 (343) 200-18-18"
+PHONE = "+7 (495) 200-18-18"
+PHONE_TEL = "+74952001818"
+CONTACTS = f"Москва, ул. Светлая, 18 · {PHONE}"
+# Знак клиники в шапке сайта — контур зуба
+TOOTH = (
+    "M12.5 9.5c2 0 3.2 1 5.5 1s3.5-1 5.5-1c2.8 0 4.5 2.3 4.5 5.4 0 3.4-1.3 5.6-2.1 8.4-.6 2.1-1 "
+    "4.2-2.6 4.2-2.2 0-1.8-6-5.3-6s-3.1 6-5.3 6c-1.6 0-2-2.1-2.6-4.2C9.3 20.5 8 18.3 8 14.9c0-3.1 "
+    "1.7-5.4 4.5-5.4z"
+)
 
 
 # --- Разбор Markdown: заголовки, абзацы, списки, таблицы — больше в документах ничего нет ---
@@ -180,14 +188,41 @@ PAGE_CSS = """
 * { box-sizing: border-box; }
 body { margin: 0; font-family: "Segoe UI", Arial, sans-serif; color: var(--ink);
   background: var(--bg); line-height: 1.6; }
-header { background: #fff; border-bottom: 1px solid var(--line); }
-header .wrap { display: flex; justify-content: space-between; align-items: center; gap: 16px;
-  flex-wrap: wrap; padding-top: 14px; padding-bottom: 14px; }
-.logo { font-weight: 700; color: var(--accent); font-size: 20px; text-decoration: none; }
-.logo small { display: block; font-weight: 400; color: var(--muted); font-size: 12px; }
-nav { display: flex; gap: 18px; font-size: 14px; color: var(--muted); flex-wrap: wrap; }
-nav b { color: var(--accent); }
-.wrap { max-width: 760px; margin: 0 auto; padding: 0 16px; }
+header { position: sticky; top: 0; z-index: 10; background: rgba(255, 255, 255, .92);
+  backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+.bar { display: flex; align-items: center; gap: 24px; height: 64px; }
+.logo { display: flex; align-items: center; gap: 10px; color: var(--ink); text-decoration: none;
+  line-height: 1.15; }
+.logo svg { flex: none; }
+.logo b { display: block; font-size: 17px; }
+.logo small { display: block; color: var(--muted); font-size: 12px; }
+nav { display: flex; gap: 4px; font-size: 14px; }
+nav a { padding: 6px 12px; border-radius: 999px; color: var(--muted); text-decoration: none;
+  white-space: nowrap; }
+nav a:hover { color: var(--ink); background: var(--bg); }
+nav a[aria-current] { color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+.call { margin-left: auto; display: flex; align-items: center; gap: 14px; }
+.phone { color: var(--ink); font-weight: 600; font-size: 14px; text-decoration: none;
+  white-space: nowrap; }
+.btn { display: inline-flex; align-items: center; gap: 6px; height: 38px; padding: 0 16px;
+  border-radius: 10px; background: var(--accent); color: #fff; font-size: 14px; font-weight: 600;
+  text-decoration: none; white-space: nowrap; }
+.btn:hover { background: #115e59; }
+.wrap { max-width: 960px; margin: 0 auto; padding: 0 16px; }
+main .wrap { max-width: 760px; }
+/* Телефон: логотип и кнопка в одну строку, разделы — под ними, переносятся во вторую строку.
+   Медиазапросы — после общих правил .wrap, иначе те перебили бы отступы */
+@media (max-width: 760px) {
+  .wrap { padding: 0 20px; }
+  .bar { flex-wrap: wrap; height: auto; gap: 0; padding-top: 18px; padding-bottom: 16px; }
+  .bar nav { order: 3; width: 100%; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+  nav a { padding: 5px 12px; font-size: 13px; background: var(--bg); }
+  .phone { display: none; }
+  .btn { height: 36px; padding: 0 12px; }
+}
+@media (max-width: 380px) {
+  .logo small { display: none; }
+}
 main { padding: 32px 0 48px; }
 h1 { font-size: 30px; line-height: 1.2; margin: 0 0 20px; }
 h2 { font-size: 19px; margin: 28px 0 8px; color: var(--accent); }
@@ -208,9 +243,22 @@ def build_page(blocks: list[tuple[str, object]], path: Path) -> None:
 <style>{PAGE_CSS}</style>
 </head>
 <body>
-<header><div class="wrap">
-  <a class="logo" href="#">{CLINIC}<small>стоматологическая клиника</small></a>
-  <nav><span>Услуги и цены</span><span>Врачи</span><b>Правила записи</b><span>Контакты</span></nav>
+<header><div class="wrap bar">
+  <a class="logo" href="#">
+    <svg width="36" height="36" viewBox="0 0 36 36" aria-hidden="true">
+      <rect width="36" height="36" rx="10" fill="#0f766e"/>
+      <path d="{TOOTH}" fill="#fff"/>
+    </svg>
+    <span><b>{CLINIC}</b><small>стоматологическая клиника</small></span>
+  </a>
+  <nav aria-label="Разделы сайта">
+    <a href="#">Услуги и цены</a><a href="#">Врачи</a>
+    <a href="#" aria-current="page">Правила записи</a><a href="#">Контакты</a>
+  </nav>
+  <div class="call">
+    <a class="phone" href="tel:{PHONE_TEL}">{PHONE}</a>
+    <a class="btn" href="tel:{PHONE_TEL}">Записаться</a>
+  </div>
 </div></header>
 <main><div class="wrap">
 {to_html(blocks)}

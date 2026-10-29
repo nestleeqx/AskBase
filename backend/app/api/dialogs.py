@@ -38,6 +38,8 @@ DEMO_READONLY = (
     "свой диалог появится в списке."
 )
 SEND_FAILED = "Не удалось отправить сообщение в Telegram. Попробуйте ещё раз."
+# Сколько сообщений переписки отдаём за раз
+PAGE = 50
 BOT_BACK = (
     "Снова на связи бот клиники. Если понадобится администратор — нажмите "
     "«Связаться с администратором»."
@@ -69,6 +71,7 @@ def _summary(conv: Conversation, chat: TelegramChat, count: int, last: Message |
         "username": chat.username,
         "demo": conv.visitor_id == DEMO_VISITOR,
         "waiting_since": conv.waiting_since,
+        "attention_at": conv.attention_at,
         "operator_until": _active_until(conv),
         "updated_at": conv.updated_at,
         "messages_count": count,
@@ -89,6 +92,7 @@ def _booking_out(b: Booking, client: str, demo: bool) -> BookingOut:
         preferred_time=b.preferred_time,
         status=b.status,
         created_at=b.created_at,
+        client_changed_at=b.client_changed_at or b.created_at,
         demo=demo,
     )
 
@@ -178,20 +182,37 @@ async def dialogs(
 
 
 @router.get("/dialogs/{conversation_id}", response_model=DialogDetail)
-async def dialog(conversation_id: str, session: SessionDep, viewer: ViewerDep):
+async def dialog(
+    conversation_id: str,
+    session: SessionDep,
+    viewer: ViewerDep,
+    before: int | None = Query(None, ge=1),
+    limit: int = Query(PAGE, ge=1, le=1000),
+):
+    """Переписка страницами: последние limit сообщений, а с before — те, что раньше него.
+    Длинный диалог не грузится целиком: ранние сообщения админка подгружает при прокрутке вверх."""
     conv, chat = await _dialog(session, conversation_id, viewer)
-    messages = list(
-        await session.scalars(
-            select(Message).where(Message.conversation_id == conv.id).order_by(Message.id)
-        )
+    in_dialog = Message.conversation_id == conv.id
+    page_query = select(Message).where(in_dialog)
+    if before is not None:
+        page_query = page_query.where(Message.id < before)
+    page = list(await session.scalars(page_query.order_by(Message.id.desc()).limit(limit)))
+    page.reverse()
+    has_more = bool(page) and bool(
+        await session.scalar(select(exists().where(in_dialog, Message.id < page[0].id)))
+    )
+    total = await session.scalar(select(func.count()).where(in_dialog)) or 0
+    last = await session.scalar(
+        select(Message).where(in_dialog).order_by(Message.id.desc()).limit(1)
     )
     bookings = await session.scalars(
         select(Booking).where(Booking.conversation_id == conv.id).order_by(Booking.created_at)
     )
     demo = conv.visitor_id == DEMO_VISITOR
     return DialogDetail(
-        **_summary(conv, chat, len(messages), messages[-1] if messages else None),
-        messages=[message_out(m) for m in messages],
+        **_summary(conv, chat, total, last),
+        messages=[message_out(m) for m in page],
+        has_more=has_more,
         bookings=[_booking_out(b, chat.title, demo) for b in bookings],
     )
 
@@ -221,7 +242,7 @@ async def reply(
     conv.waiting_since = None
     conv.operator_until = now() + timedelta(minutes=s.operator_minutes)
     await session.commit()
-    return await dialog(conversation_id, session, viewer)
+    return await dialog(conversation_id, session, viewer, before=None, limit=PAGE)
 
 
 @router.post("/dialogs/{conversation_id}/release", response_model=DialogDetail)
@@ -238,7 +259,7 @@ async def release(conversation_id: str, session: SessionDep, viewer: ViewerDep):
             await tg.send(chat.chat_id, BOT_BACK)
         except TelegramError as e:
             log.warning("Telegram: %s", e)
-    return await dialog(conversation_id, session, viewer)
+    return await dialog(conversation_id, session, viewer, before=None, limit=PAGE)
 
 
 @router.get("/bookings", response_model=BookingList)

@@ -66,46 +66,50 @@ export function HeroChat() {
           </div>
           <Send className="ml-auto size-4 text-[#229ED9]" />
         </div>
-        <div className="flex h-[360px] flex-col justify-end gap-2.5 bg-[#e3eeec] px-3.5 py-4 sm:h-[380px]">
-          {SCRIPT.slice(0, shown).map((line, i) =>
-            line.who === "client" ? (
-              <p
-                key={i}
-                className="rise ml-auto max-w-[80%] rounded-2xl rounded-br-md bg-[#d7f5c6] px-3.5 py-2 text-[13px] text-ink"
-              >
-                {line.text}
-              </p>
-            ) : line.who === "bot" ? (
-              <div key={i} className="rise max-w-[85%] rounded-2xl rounded-bl-md bg-surface px-3.5 py-2 text-[13px]">
-                <p className="leading-relaxed text-ink">{line.text}</p>
-                {line.source && (
-                  <p className="mt-1 flex items-center gap-1 text-[11px] text-ink-3 italic">
-                    <FileText className="size-3" />
-                    Источник: {line.source}
-                  </p>
-                )}
-              </div>
-            ) : (
-              <p
-                key={i}
-                className="rise mx-auto flex items-center gap-1.5 rounded-full bg-warn-soft px-3 py-1 text-[11px] font-medium text-warn"
-              >
-                <Headset className="size-3.5" />
-                {line.text}
-              </p>
-            ),
-          )}
-          {typing && (
-            <span className="fade-in flex w-fit items-center gap-1 rounded-2xl rounded-bl-md bg-surface px-3.5 py-3">
-              {[0, 1, 2].map((d) => (
-                <span
-                  key={d}
-                  className="size-1.5 animate-bounce rounded-full bg-ink-3"
-                  style={{ animationDelay: `${d * 140}ms` }}
-                />
-              ))}
-            </span>
-          )}
+        {/* На узком экране переписка выше окна: старые сообщения уходят вверх под край, как в Telegram,
+            а не наезжают на шапку */}
+        <div className="flex h-[380px] flex-col justify-end gap-2.5 overflow-hidden bg-[#e3eeec] px-3.5 py-4 mask-[linear-gradient(to_bottom,transparent,#000_36px)]">
+          <div className="flex shrink-0 flex-col gap-2.5">
+            {SCRIPT.slice(0, shown).map((line, i) =>
+              line.who === "client" ? (
+                <p
+                  key={i}
+                  className="rise ml-auto max-w-[80%] rounded-2xl rounded-br-md bg-[#d7f5c6] px-3.5 py-2 text-[13px] text-ink"
+                >
+                  {line.text}
+                </p>
+              ) : line.who === "bot" ? (
+                <div key={i} className="rise max-w-[85%] rounded-2xl rounded-bl-md bg-surface px-3.5 py-2 text-[13px]">
+                  <p className="leading-relaxed text-ink">{line.text}</p>
+                  {line.source && (
+                    <p className="mt-1 flex items-center gap-1 text-[11px] text-ink-3 italic">
+                      <FileText className="size-3" />
+                      Источник: {line.source}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <p
+                  key={i}
+                  className="rise mx-auto flex items-center gap-1.5 rounded-full bg-warn-soft px-3 py-1 text-[11px] font-medium text-warn"
+                >
+                  <Headset className="size-3.5" />
+                  {line.text}
+                </p>
+              ),
+            )}
+            {typing && (
+              <span className="fade-in flex w-fit items-center gap-1 rounded-2xl rounded-bl-md bg-surface px-3.5 py-3">
+                {[0, 1, 2].map((d) => (
+                  <span
+                    key={d}
+                    className="size-1.5 animate-bounce rounded-full bg-ink-3"
+                    style={{ animationDelay: `${d * 140}ms` }}
+                  />
+                ))}
+              </span>
+            )}
+          </div>
         </div>
       </div>
     </div>

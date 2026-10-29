@@ -1,17 +1,31 @@
 "use client";
 
-import { ArrowLeft, Bot, CalendarCheck, Headset, Inbox, Search, Send, SendHorizontal } from "lucide-react";
+import {
+  ArrowLeft,
+  Bot,
+  CalendarCheck,
+  ChevronDown,
+  Headset,
+  Inbox,
+  Loader2,
+  Search,
+  Send,
+  SendHorizontal,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import { api } from "@/lib/api";
 import { formatShortTime, formatTime, plural } from "@/lib/format";
-import type { DialogDetail, DialogSummary } from "@/lib/types";
+import type { Booking, DialogDetail, DialogSummary } from "@/lib/types";
 import { BotBubble, OperatorBubble, UserBubble } from "../chat/Bubbles";
 import { useToast } from "../Toast";
 import { Button } from "../ui";
 import { TelegramDialog, useTelegram } from "./TelegramDialog";
+
+// Сколько сообщений переписки грузим за раз — столько же отдаёт API по умолчанию
+const PAGE = 50;
 
 const AVATAR_COLORS = ["#0d9488", "#0891b2", "#6d4ae0", "#c2410c", "#be185d", "#4d7c0f", "#a16207", "#1d4ed8"];
 
@@ -61,7 +75,7 @@ function DialogItem({ dialog, active, onSelect }: { dialog: DialogSummary; activ
         onClick={onSelect}
         aria-current={active ? "true" : undefined}
         className={`flex w-full gap-3 rounded-xl px-3 py-2.5 text-left transition-colors ${
-          active ? "bg-accent-soft" : "hover:bg-sunken"
+          active ? "bg-sunken" : "hover:bg-sunken/60"
         }`}
       >
         <Avatar name={dialog.title} />
@@ -144,7 +158,7 @@ function Composer({ dialog, onChange }: { dialog: DialogDetail; onChange: (d: Di
             onClick={release}
             icon={<Bot className="size-3.5" />}
           >
-            Вернуть боту
+            Включить бота
           </Button>
         </div>
       )}
@@ -160,9 +174,9 @@ function Composer({ dialog, onChange }: { dialog: DialogDetail; onChange: (d: Di
           }}
           rows={1}
           maxLength={2000}
-          placeholder="Ответить клиенту как администратор…"
+          placeholder="Ответ клиенту…"
           aria-label="Ответ клиенту"
-          className="max-h-40 min-h-11 min-w-0 flex-1 resize-none rounded-xl border border-line bg-surface px-3.5 py-2.5 text-sm outline-none [field-sizing:content] placeholder:text-ink-3 focus:border-accent/40 focus:ring-4 focus:ring-accent-soft"
+          className="max-h-40 min-h-11 min-w-0 flex-1 resize-none rounded-xl border border-line bg-surface px-3.5 py-2.5 text-sm outline-none [field-sizing:content] placeholder:text-ink-3 focus:border-accent/50 focus:ring-4 focus:ring-accent/10"
         />
         <Button
           type="submit"
@@ -186,16 +200,126 @@ function Composer({ dialog, onChange }: { dialog: DialogDetail; onChange: (d: Di
   );
 }
 
+const BOOKING_STATUS = { new: "ждёт звонка", confirmed: "подтверждена", cancelled: "отменена" } as const;
+
+function BookingLine({ booking }: { booking: Booking }) {
+  const active = booking.status !== "cancelled";
+  return (
+    <Link
+      href="/admin/bookings"
+      className={`flex items-start gap-1.5 text-xs leading-snug hover:text-ink ${active ? "text-ink-2" : "text-ink-3"}`}
+    >
+      <CalendarCheck className={`mt-px size-3.5 shrink-0 ${active ? "text-success" : "text-ink-3"}`} />
+      {/* Переносится, а не обрезается: на телефоне время записи должно читаться целиком */}
+      <span className="min-w-0">
+        {booking.preferred_time} · <span className={active ? "font-medium" : ""}>{BOOKING_STATUS[booking.status]}</span>{" "}
+        <span className="whitespace-nowrap text-ink-3">· заявка {formatTime(booking.created_at)}</span>
+      </span>
+    </Link>
+  );
+}
+
+/** Заявки клиента над перепиской: действующие видны сразу, отменённые — свёрнуты в одну строку. */
+function BookingStrip({ bookings }: { bookings: Booking[] }) {
+  const [open, setOpen] = useState(false);
+  const sorted = [...bookings].sort((a, b) => b.created_at.localeCompare(a.created_at));
+  const active = sorted.filter((b) => b.status !== "cancelled");
+  const cancelled = sorted.filter((b) => b.status === "cancelled");
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Список отменённых — поверх переписки: закрываем кликом мимо него и по Esc
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && setOpen(false);
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("mousedown", onClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const lines = (expanded: boolean) => (
+    <div className="space-y-1.5 bg-success-soft/40 px-4 py-2 sm:px-5">
+      {active.map((b) => (
+        <BookingLine key={b.id} booking={b} />
+      ))}
+      {cancelled.length > 0 && (
+        <button
+          type="button"
+          onClick={() => setOpen(!expanded)}
+          aria-expanded={expanded}
+          // Свёрнутая копия под раскрытой — не для клавиатуры и экранного диктора
+          tabIndex={open && !expanded ? -1 : undefined}
+          className="flex items-center gap-1 text-xs text-ink-3 hover:text-ink-2"
+        >
+          {active.length ? "Ещё " : ""}
+          {cancelled.length} {plural(cancelled.length, ["отменённая заявка", "отменённые заявки", "отменённых заявок"])}
+          <ChevronDown className={`size-3.5 transition-transform ${expanded ? "rotate-180" : ""}`} />
+        </button>
+      )}
+      {expanded && (
+        <div className="max-h-60 space-y-1.5 overflow-y-auto scrollbar-thin">
+          {cancelled.map((b) => (
+            <BookingLine key={b.id} booking={b} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  // Блок раскрывается целиком и вниз, но поверх сообщений: под ним остаётся свёрнутая копия той же
+  // высоты, поэтому переписка не сдвигается
+  return (
+    <div ref={ref} className="relative z-10 border-b border-line bg-surface">
+      <div aria-hidden={open}>{lines(false)}</div>
+      {open && (
+        <div className="absolute inset-x-0 top-0 border-b border-line bg-surface shadow-[0_18px_30px_-20px_rgba(21,23,28,.35)]">
+          {lines(true)}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Thread({ id, onBack }: { id: string; onBack: () => void }) {
   const { mutate: mutateAll } = useSWRConfig();
-  const { data, error, mutate } = useSWR(["dialog", id], () => api.dialog(id), { refreshInterval: 3000 });
+  // Сколько последних сообщений показываем: длинная переписка грузится не целиком, а по PAGE —
+  // прокрутили к началу, просим больше. Опрос идёт с тем же числом, поэтому между частями нет дыр
+  const [limit, setLimit] = useState(PAGE);
+  const { data, error, mutate } = useSWR(["dialog", id, limit], () => api.dialog(id, limit), {
+    refreshInterval: 3000,
+    // Пока грузятся ранние сообщения, показываем уже загруженные, а не заглушку
+    keepPreviousData: true,
+  });
   const scrollRef = useRef<HTMLDivElement>(null);
-  const count = data?.messages.length ?? 0;
+  // Расстояние от низа до видимой части — чтобы после подгрузки сверху остаться на том же месте
+  const fromBottom = useRef<number | null>(null);
+  const shown = data?.messages.length ?? 0;
+  const lastId = data?.messages.at(-1)?.id;
+  const loadingOlder = !!data?.has_more && shown < limit;
 
+  // Новое сообщение внизу (или открыли диалог) — показываем его
   useEffect(() => {
     const el = scrollRef.current;
-    if (el) el.scrollTo({ top: el.scrollHeight });
-  }, [id, count]);
+    if (el && fromBottom.current === null) el.scrollTo({ top: el.scrollHeight });
+  }, [id, lastId]);
+
+  // Ранние сообщения добавились сверху — возвращаем прокрутку туда, где читали
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el || fromBottom.current === null || loadingOlder) return;
+    el.scrollTop = el.scrollHeight - fromBottom.current;
+    fromBottom.current = null;
+  }, [shown, loadingOlder]);
+
+  function loadOlder() {
+    const el = scrollRef.current;
+    if (!el || !data?.has_more || loadingOlder) return;
+    fromBottom.current = el.scrollHeight - el.scrollTop;
+    setLimit((l) => l + PAGE);
+  }
 
   if (error)
     return (
@@ -210,8 +334,9 @@ function Thread({ id, onBack }: { id: string; onBack: () => void }) {
     );
   if (!data) return <div className="skeleton m-4 flex-1 rounded-2xl" />;
 
-  function changed(d: DialogDetail) {
-    mutate(d, { revalidate: false });
+  function changed() {
+    // Ответ сервера — только последняя страница; перечитываем столько, сколько уже показано
+    mutate();
     // Статус диалога поменялся — обновляем список и бейдж в меню
     mutateAll((key) => Array.isArray(key) && key[0] === "dialogs");
   }
@@ -230,9 +355,13 @@ function Thread({ id, onBack }: { id: string; onBack: () => void }) {
         <Avatar name={data.title} size="lg" />
         <div className="min-w-0 flex-1">
           <p className="truncate font-semibold text-ink">{data.title}</p>
-          <p className="truncate text-xs text-ink-3">
-            Telegram{data.username && ` · @${data.username}`} · {data.messages_count}{" "}
-            {plural(data.messages_count, ["сообщение", "сообщения", "сообщений"])}
+          {/* Части переносятся целиком, а не обрезаются многоточием: на телефоне видно и ник, и число сообщений */}
+          <p className="flex flex-wrap gap-x-1 text-xs text-ink-3">
+            <span className="max-sm:hidden">Telegram ·</span>
+            {data.username && <span className="min-w-0 truncate">@{data.username} ·</span>}
+            <span className="whitespace-nowrap">
+              {data.messages_count} {plural(data.messages_count, ["сообщение", "сообщения", "сообщений"])}
+            </span>
           </p>
         </div>
         <span className="max-sm:hidden">
@@ -240,25 +369,31 @@ function Thread({ id, onBack }: { id: string; onBack: () => void }) {
         </span>
       </div>
 
-      {data.bookings.length > 0 && (
-        <div className="flex flex-wrap gap-2 border-b border-line bg-success-soft/40 px-4 py-2 sm:px-5">
-          {data.bookings.map((b) => (
-            <Link
-              key={b.id}
-              href="/admin/bookings"
-              className="inline-flex items-center gap-1.5 text-xs text-ink-2 hover:text-ink"
-            >
-              <CalendarCheck className="size-3.5 text-success" />
-              Заявка на запись: {b.preferred_time} ·{" "}
-              <span className="font-medium">
-                {b.status === "new" ? "ждёт звонка" : b.status === "confirmed" ? "подтверждена" : "отменена"}
-              </span>
-            </Link>
-          ))}
-        </div>
-      )}
+      {data.bookings.length > 0 && <BookingStrip bookings={data.bookings} />}
 
-      <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto bg-sunken/40 px-3 py-4 scrollbar-thin sm:px-5">
+      <div
+        ref={scrollRef}
+        onScroll={(e) => e.currentTarget.scrollTop < 120 && loadOlder()}
+        className="flex-1 space-y-4 overflow-y-auto bg-sunken/40 px-3 py-4 scrollbar-thin sm:px-5"
+      >
+        {data.has_more && (
+          <div className="flex justify-center">
+            {loadingOlder ? (
+              <span className="inline-flex items-center gap-1.5 text-xs text-ink-3">
+                <Loader2 className="size-3.5 animate-spin" />
+                Загружаю ранние сообщения…
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={loadOlder}
+                className="rounded-full border border-line bg-surface px-3 py-1 text-xs text-ink-2 hover:text-ink"
+              >
+                Показать ранние сообщения
+              </button>
+            )}
+          </div>
+        )}
         {data.messages.map((m, i) =>
           m.role === "user" ? (
             <UserBubble key={m.id} text={m.text} side="left" time={m.created_at} />
@@ -297,8 +432,20 @@ export function DialogsView() {
     keepPreviousData: true,
   });
 
+  // Открытый диалог — отдельный шаг в истории браузера: «Назад» со страницы заявок (и жест назад
+  // на телефоне) возвращает в этот диалог, а не к списку
+  const pushed = useRef(false);
   function select(id: string | null) {
-    router.replace(id ? `${pathname}?id=${id}` : pathname, { scroll: false });
+    if (id) {
+      pushed.current = true;
+      router.push(`${pathname}?id=${id}`, { scroll: false });
+    } else if (pushed.current) {
+      // Стрелка «к списку» — тот же шаг назад, что и кнопка браузера, без лишней записи в истории
+      pushed.current = false;
+      router.back();
+    } else {
+      router.replace(pathname, { scroll: false });
+    }
   }
 
   // На широком экране сразу открываем первый диалог, на телефоне — показываем список
@@ -343,9 +490,9 @@ export function DialogsView() {
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Имя клиента или текст сообщения"
+                placeholder="Имя или текст сообщения"
                 aria-label="Поиск по диалогам"
-                className="h-9 w-full rounded-xl border border-line bg-surface pr-3 pl-9 text-sm outline-none placeholder:text-ink-3 focus:border-accent/40 focus:ring-4 focus:ring-accent-soft"
+                className="h-9 w-full rounded-xl border border-line bg-surface pr-3 pl-9 text-sm outline-none placeholder:text-ink-3 focus:border-accent/50 focus:ring-4 focus:ring-accent/10"
               />
             </label>
             <div className="flex gap-1 rounded-xl bg-sunken p-1 text-xs font-medium" role="tablist">

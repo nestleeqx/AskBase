@@ -114,6 +114,11 @@ NOTHING_CHANGED = {
     ),
     "confirmed": "Ничего не поменялось — запись остаётся прежней. Ждём вас в клинике!",
 }
+# Та же заявка второй раз («➕ Записать ещё одного человека», а имя и время прежние)
+ALREADY_BOOKED = {
+    "new": "Такая заявка уже есть — повторно не создаю. Администратор позвонит в рабочее время.",
+    "confirmed": "Вы уже записаны на это время — повторно не создаю. Ждём вас в клинике!",
+}
 BOOK_KEPT = {
     "new": "Хорошо, заявка остаётся как есть. Администратор позвонит в рабочее время.",
     "confirmed": "Хорошо, запись остаётся как есть. Ждём вас в клинике!",
@@ -398,6 +403,15 @@ class Bot:
                 await self.tg.send(
                     chat_id, BOOK_KEPT.get(state.get("status"), BOOK_KEPT["new"]), MENU
                 )
+            elif state.get("edit_id"):
+                # Отменили правку заявки, а не саму запись — прежняя заявка остаётся
+                async with self.sessions() as session:
+                    old = await session.get(Booking, state["edit_id"])
+                if old is not None and old.status != "cancelled":
+                    await self._note(chat_id, booking_summary(old, kept=True))
+                    await self.tg.send(chat_id, BOOK_KEPT.get(old.status, BOOK_KEPT["new"]), MENU)
+                else:
+                    await self.tg.send(chat_id, BOOK_CANCELLED, MENU)
             else:
                 await self._note(chat_id, BOOKING_CANCELLED_NOTE)
                 await self.tg.send(chat_id, BOOK_CANCELLED, MENU)
@@ -497,6 +511,7 @@ class Bot:
                 session.add(Message(conversation_id=conv.id, role="user", text=question))
                 conv.updated_at = now()
                 conv.waiting_since = conv.waiting_since or now()
+                conv.attention_at = now()
                 await session.commit()
                 await notify_manager(
                     self.tg,
@@ -543,6 +558,7 @@ class Bot:
                     reply.text, reply.reason = _operator_text(profile), "operator"
                 if reply.answered is False:
                     conv.waiting_since = conv.waiting_since or now()
+                    conv.attention_at = now()
                 await session.commit()
             finally:
                 typing.cancel()
@@ -591,6 +607,7 @@ class Bot:
             )
             conv.updated_at = now()
             conv.waiting_since = conv.waiting_since or now()
+            conv.attention_at = now()
             await session.commit()
         await self.tg.send(chat["id"], text, MENU)
         await notify_manager(
@@ -635,11 +652,11 @@ class Bot:
 
     # --- Запись на приём ---
 
-    async def _open_booking(self, chat_id: int) -> Booking | None:
-        """Последняя открытая заявка клиента: ждёт звонка или подтверждена недавно."""
+    async def _open_bookings(self, chat_id: int) -> list[Booking]:
+        """Открытые заявки клиента, новые первыми: ждут звонка или подтверждены недавно."""
         since = now() - timedelta(days=CONFIRMED_DAYS)
         async with self.sessions() as session:
-            return await session.scalar(
+            rows = await session.scalars(
                 select(Booking)
                 .join(TelegramChat, TelegramChat.conversation_id == Booking.conversation_id)
                 .where(
@@ -650,8 +667,12 @@ class Bot:
                     ),
                 )
                 .order_by(Booking.created_at.desc())
-                .limit(1)
             )
+            return list(rows)
+
+    async def _open_booking(self, chat_id: int) -> Booking | None:
+        """Последняя открытая заявка клиента."""
+        return next(iter(await self._open_bookings(chat_id)), None)
 
     async def _booking_start(
         self,
@@ -798,6 +819,7 @@ class Bot:
                 await self.tg.send(chat_id, NOTHING_TO_CANCEL, MENU)
                 return
             b.status = "cancelled"
+            b.client_changed_at = now()
             await session.commit()
             conv_id = b.conversation_id
         await self._note(chat_id, booking_summary(b, cancelled=True))
@@ -840,10 +862,7 @@ class Bot:
             text, markup = ASK_REASON, keyboard([[SKIP], [CANCEL]], placeholder="Что беспокоит")
         else:
             text = ASK_TIME.format(hours=(await self._profile(chat_id)).hours)
-            markup = keyboard(
-                [["Утром", "Днём", "Вечером"], ["В ближайшее время"], [CANCEL]],
-                placeholder="Удобное время",
-            )
+            markup = keyboard([*booking.time_buttons(), [CANCEL]], placeholder="Удобное время")
         await self.tg.send(chat_id, f"{prefix}\n\n{text}" if prefix else text, markup)
 
     async def _booking_step(self, msg: dict[str, Any], state: dict[str, Any]) -> None:
@@ -894,7 +913,7 @@ class Bot:
             "name": state["name"],
             "phone": state["phone"],
             "reason": state.get("reason"),
-            "preferred_time": state["time"],
+            "preferred_time": booking.pin_dates(state["time"])[: booking.MAX_TIME],
         }
         async with self.sessions() as session:
             b = await session.get(Booking, state["edit_id"]) if state.get("edit_id") else None
@@ -911,6 +930,22 @@ class Bot:
             await self._note(chat["id"], booking_summary(b, kept=True))
             await self.tg.send(chat["id"], NOTHING_CHANGED[b.status], MENU)
             return
+        if not edited:
+            # Тот же человек на то же время уже записан — вторую такую заявку не создаём
+            twin = next(
+                (
+                    o
+                    for o in await self._open_bookings(chat["id"])
+                    if o.name.casefold() == fields["name"].casefold()
+                    and booking.same_time(fields["preferred_time"], o.preferred_time)
+                ),
+                None,
+            )
+            if twin is not None:
+                await booking.clear_state(self.redis, chat["id"])
+                await self._note(chat["id"], booking_summary(twin, kept=True))
+                await self.tg.send(chat["id"], ALREADY_BOOKED[twin.status], MENU)
+                return
         async with self.sessions() as session:
             conv = await self._conversation(session, chat)
             if b is not None:
@@ -923,6 +958,7 @@ class Bot:
                 # (уточнили повод или телефон), подтверждённая запись остаётся подтверждённой
                 if not same_time:
                     b.status = "new"
+                b.client_changed_at = now()
             else:
                 b = Booking(conversation_id=conv.id, **fields)
                 session.add(b)

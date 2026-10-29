@@ -8,7 +8,6 @@ import {
   FileStack,
   Globe,
   Inbox,
-  LogOut,
   Menu,
   MessagesSquare,
   SearchCheck,
@@ -16,18 +15,20 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
-import useSWR, { useSWRConfig } from "swr";
-import { api, setOwnerToken } from "@/lib/api";
+import useSWR from "swr";
+import { api } from "@/lib/api";
 import { CLINIC_RULES_PATH } from "@/lib/site";
+import { SoundToggle, useAlerts } from "./Alerts";
 import { Logo } from "../Logo";
 
 type Item = {
   href: string;
   label: string;
   icon: ReactNode;
-  badge?: number;
+  /** Число в меню; null — ещё грузится (на проде первый запрос бывает долгим) */
+  badge?: number | null;
   external?: boolean;
 };
 
@@ -44,16 +45,17 @@ function NavItem({ item, onNavigate }: { item: Item; onNavigate?: () => void }) 
       target={item.external ? "_blank" : undefined}
       aria-current={active ? "page" : undefined}
       className={`${NAV_ITEM} ${
-        active ? "bg-accent-soft font-medium text-accent-ink" : "text-ink-2 hover:bg-sunken hover:text-ink"
+        active ? "bg-sunken font-medium text-ink" : "text-ink-2 hover:bg-sunken/70 hover:text-ink"
       }`}
     >
       <span className={active ? "text-accent" : "text-ink-3 group-hover:text-ink-2"}>{item.icon}</span>
       {item.label}
       {item.external && <ArrowUpRight className="ml-auto size-3.5 text-ink-3" />}
+      {item.badge === null && <span className="skeleton ml-auto h-4 w-5 rounded-md" aria-hidden />}
       {!!item.badge && (
         <span
           className={`ml-auto min-w-5 rounded-md px-1.5 py-px text-center text-[11px] font-semibold tabular-nums ${
-            active ? "bg-accent text-white" : "bg-accent-soft text-accent-ink"
+            active ? "bg-accent text-white" : "bg-sunken text-ink-2"
           }`}
         >
           {item.badge}
@@ -71,7 +73,7 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       href: "/admin/documents",
       label: "Документы",
       icon: <FileStack className="size-4" />,
-      badge: data?.documents.length,
+      badge: data ? data.documents.length : null,
     },
     { href: "/admin/search", label: "Проверка поиска", icon: <SearchCheck className="size-4" /> },
   ];
@@ -84,12 +86,17 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
     refreshInterval: 10000,
   });
   const bot: Item[] = [
-    { href: "/admin/dialogs", label: "Диалоги", icon: <Inbox className="size-4" />, badge: dialogs?.waiting },
+    {
+      href: "/admin/dialogs",
+      label: "Диалоги",
+      icon: <Inbox className="size-4" />,
+      badge: dialogs ? dialogs.waiting : null,
+    },
     {
       href: "/admin/bookings",
       label: "Заявки на запись",
       icon: <CalendarCheck className="size-4" />,
-      badge: bookings?.new,
+      badge: bookings ? bookings.new : null,
     },
     { href: "/admin/chat", label: "Тестовый чат", icon: <MessagesSquare className="size-4" /> },
   ];
@@ -98,7 +105,7 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       href: "/admin/unanswered",
       label: "Бот не смог ответить",
       icon: <CircleHelp className="size-4" />,
-      badge: unanswered?.open,
+      badge: unanswered ? unanswered.open : null,
     },
     { href: "/admin/analytics", label: "Аналитика", icon: <ChartColumn className="size-4" /> },
   ];
@@ -149,7 +156,7 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         </div>
       </nav>
       <div className="p-3">
-        <div className="rounded-xl border border-line bg-gradient-to-b from-accent-soft/70 to-surface p-3.5">
+        <div className="rounded-2xl border border-line bg-canvas p-3.5">
           <p className="text-[13px] font-semibold text-ink">
             {auth?.owner ? "Вы — владелец клиники" : "Демо: клиника «Белая линия»"}
           </p>
@@ -164,11 +171,9 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   );
 }
 
-/** Чья это админка: демо открыто от лица стоматологии «Белая линия». */
-/** Кто вошёл: гость демо или владелец клиники. Клик — на страницу входа, сменить роль. */
+/** Кто вошёл: гость демо или владелец клиники. Клик — на страницу входа: там и выход
+ *  из режима владельца («Войти как гость» сбрасывает его вход), поэтому отдельной кнопки нет. */
 function ClinicBadge() {
-  const router = useRouter();
-  const { mutate } = useSWRConfig();
   const { data: auth } = useSWR("auth", api.auth);
   const owner = !!auth?.owner;
   return (
@@ -176,7 +181,7 @@ function ClinicBadge() {
       <Link
         href="/login"
         className="flex items-center gap-2.5 rounded-xl py-1 pr-2 pl-1 transition-colors hover:bg-sunken"
-        title={owner ? "Вы вошли как владелец клиники. Сменить вход" : "Гостевой доступ. Войти как владелец"}
+        title={owner ? "Вы вошли как владелец клиники. Выйти или сменить вход" : "Гостевой доступ. Войти как владелец"}
       >
         <span className="grid size-9 shrink-0 place-items-center rounded-full bg-gradient-to-br from-[#5eead4] to-[#0d9488] text-sm font-semibold text-white">
           Б
@@ -186,28 +191,13 @@ function ClinicBadge() {
           <span className="block text-[11px] text-ink-3">{owner ? "владелец" : "гостевой доступ"}</span>
         </span>
       </Link>
-      {owner && (
-        <button
-          type="button"
-          onClick={async () => {
-            setOwnerToken(null);
-            // Кеш запросов собран от лица владельца — сбрасываем его
-            await mutate(() => true, undefined, { revalidate: false });
-            router.push("/login");
-          }}
-          aria-label="Выйти из режима владельца"
-          title="Выйти"
-          className="grid size-9 place-items-center rounded-xl text-ink-3 hover:bg-sunken hover:text-ink"
-        >
-          <LogOut className="size-4" />
-        </button>
-      )}
     </span>
   );
 }
 
 export function AdminShell({ children }: { children: ReactNode }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  useAlerts();
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -255,6 +245,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
             <Logo />
           </Link>
           <div className="ml-auto flex items-center gap-2.5">
+            <SoundToggle />
             <ClinicBadge />
             <button
               type="button"

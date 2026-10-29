@@ -102,7 +102,7 @@ async def test_owner_settings_apply_to_everyone(client):
     body = {
         "greeting": "Добро пожаловать в «Белую линию»!",
         "tone": "formal",
-        "phone": "+7 (343) 111-11-11",
+        "phone": "+7 (495) 111-11-11",
         "hours": "ежедневно 9:00–20:00",
     }
     data = (await client.put("/api/settings", json=body, headers=headers)).json()

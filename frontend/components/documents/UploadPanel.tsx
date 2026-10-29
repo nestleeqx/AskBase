@@ -91,14 +91,17 @@ export function UploadPanel({ limits, busy, onFile, onUrl, onReject }: Props) {
             if (!disabled) pick(e.dataTransfer.files[0]);
           }}
           className={`mt-4 flex w-full flex-col items-center justify-center rounded-2xl border-2 border-dashed px-4 py-7 text-center transition-colors disabled:cursor-not-allowed disabled:opacity-55 ${
-            dragging ? "border-accent bg-accent-soft" : "border-line-strong hover:border-accent/50 hover:bg-sunken/60"
+            dragging
+              ? "border-accent bg-accent-soft/50"
+              : "border-line-strong hover:border-accent/50 hover:bg-accent-soft/30"
           }`}
         >
           <span className="grid size-11 place-items-center rounded-full bg-accent-soft text-accent">
             <Upload className="size-5" />
           </span>
           <span className="mt-3 text-sm font-medium text-ink">
-            Перетащите файл сюда или <span className="text-accent">выберите на компьютере</span>
+            Перетащите файл сюда или{" "}
+            <span className="font-medium text-accent underline underline-offset-4">выберите на компьютере</span>
           </span>
           <span className="mt-1 text-xs text-ink-3">
             {limits
@@ -125,7 +128,7 @@ export function UploadPanel({ limits, busy, onFile, onUrl, onReject }: Props) {
             inputMode="url"
             placeholder="https://сайт-клиники.ru/ceny"
             aria-label="Ссылка на страницу сайта"
-            className="h-10 min-w-0 flex-1 rounded-xl border border-line bg-surface px-3 text-sm outline-none placeholder:text-ink-3 focus:border-accent/40 focus:ring-4 focus:ring-accent-soft disabled:opacity-55"
+            className="h-10 w-full min-w-0 rounded-xl border border-line bg-surface px-3 text-sm outline-none sm:flex-1 placeholder:text-ink-3 focus:border-accent/50 focus:ring-4 focus:ring-accent/10 disabled:opacity-55"
           />
           <Button type="submit" variant="primary" className="h-10" loading={busy} disabled={disabled || !url.trim()}>
             Загрузить страницу

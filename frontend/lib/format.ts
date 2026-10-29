@@ -58,3 +58,19 @@ export function formatShortTime(iso: string) {
   if (days === 1) return "вчера";
   return dayFmt.format(date);
 }
+
+/** Маска российского номера: «+7 (495) 200-18-18». prev — значение до правки: если стёрли
+ *  скобку или дефис, убираем и цифру перед ним — иначе маска вернула бы символ на место. */
+export function maskPhone(value: string, prev = "") {
+  let digits = value.replace(/\D/g, "");
+  if (value.length < prev.length && digits === prev.replace(/\D/g, "")) digits = digits.slice(0, -1);
+  if (digits[0] === "8" || digits[0] === "7") digits = digits.slice(1);
+  digits = digits.slice(0, 10);
+  if (!digits) return "";
+  const [a, b, c, d] = [digits.slice(0, 3), digits.slice(3, 6), digits.slice(6, 8), digits.slice(8, 10)];
+  let out = `+7 (${a}`;
+  if (b) out += `) ${b}`;
+  if (c) out += `-${c}`;
+  if (d) out += `-${d}`;
+  return out;
+}

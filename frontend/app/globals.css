@@ -4,17 +4,18 @@
   --font-sans: var(--font-onest);
 }
 
-/* Палитра AskBase: бирюза — свежий «медицинский» акцент, отдельно от синего LeadSort и лайма CardForge */
+/* Палитра AskBase: нейтральные белый и серый, чёрные основные кнопки, бирюза — только акцент
+   (найденные фрагменты, ответ бота, графики). Отдельно от синего LeadSort и лайма CardForge */
 @theme {
-  --color-canvas: #f3f6f6;
+  --color-canvas: #f5f6f6;
   --color-surface: #ffffff;
-  --color-sunken: #eef3f2;
-  --color-line: #e1e8e7;
-  --color-line-strong: #cbd8d6;
+  --color-sunken: #f0f2f2;
+  --color-line: #e5e8e8;
+  --color-line-strong: #d2d7d7;
 
-  --color-ink: #10201f;
-  --color-ink-2: #465755;
-  --color-ink-3: #869593;
+  --color-ink: #111716;
+  --color-ink-2: #4b5554;
+  --color-ink-3: #8a9493;
 
   /* glow — светлая подсветка: выделение текста, найденные слова */
   --color-accent: #0d9488;
@@ -182,19 +183,82 @@ mark.hl {
 
 .hero-glow {
   background:
-    radial-gradient(40% 50% at 70% 40%, rgba(13, 148, 136, 0.22), transparent 70%),
-    radial-gradient(30% 40% at 20% 20%, rgba(79, 209, 189, 0.14), transparent 70%);
+    radial-gradient(40% 50% at 50% 50%, rgba(13, 148, 136, 0.2), transparent 70%),
+    radial-gradient(30% 40% at 30% 30%, rgba(79, 209, 189, 0.16), transparent 70%);
 }
 
-/* Линия между шагами «Как работает» заполняется, когда блок доезжает до экрана */
-.step-line {
-  transform: scaleX(0);
-  transform-origin: left;
-  transition: transform 1.4s cubic-bezier(0.2, 0.7, 0.2, 1) 0.2s;
+/* Круги первого экрана гаснут к краям и вниз — заголовок и кнопки остаются на чистом фоне */
+.orbit-fade {
+  mask-image: radial-gradient(ellipse 60% 70% at 50% 40%, #000 40%, transparent 85%);
 }
 
-.is-shown .step-line {
-  transform: scaleX(1);
+/* Бирюзовая дуга, бегущая по кругу: конический градиент, видимый только по контуру */
+@keyframes orbit-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Волна от центра: круг внутреннего радиуса расходится до внешнего и гаснет */
+@keyframes orbit-ripple {
+  from {
+    transform: translate(-50%, -50%) scale(0.5);
+    opacity: 0.45;
+  }
+  to {
+    transform: translate(-50%, -50%) scale(3.4);
+    opacity: 0;
+  }
+}
+
+.orbit-ripple {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 380px;
+  height: 380px;
+  border-radius: 9999px;
+  border: 1px solid rgba(13, 148, 136, 0.45);
+  background: radial-gradient(closest-side, transparent 80%, rgba(79, 209, 189, 0.08));
+  animation: orbit-ripple 14s cubic-bezier(0.25, 0.6, 0.35, 1) infinite;
+}
+
+/* Лента событий: новая карточка проявляется сверху, остальные плавно съезжают ниже и уменьшаются.
+   Позиция — в свойствах translate/scale, появление — в transform: они не мешают друг другу */
+@keyframes feed-in {
+  from {
+    opacity: 0;
+    transform: translateY(-16px);
+  }
+}
+
+.feed-card {
+  animation: feed-in 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  transition:
+    translate 0.7s cubic-bezier(0.2, 0.7, 0.2, 1),
+    scale 0.7s cubic-bezier(0.2, 0.7, 0.2, 1),
+    opacity 0.7s ease;
+}
+
+.orbit-spin {
+  animation: orbit-spin 24s linear infinite;
+}
+
+/* Хвост светлеет к голове: голова на 0° (сверху), где стоит точка */
+.orbit-arc {
+  background: conic-gradient(from 0deg, transparent 0 75%, rgba(13, 148, 136, 0.08) 82%, rgba(13, 148, 136, 0.5) 100%);
+  mask: radial-gradient(farthest-side, transparent calc(100% - 1.5px), #000 calc(100% - 1px));
+}
+
+.orbit-dot {
+  width: 6px;
+  height: 6px;
+  margin: -3px 0 0 -3px;
+  border-radius: 9999px;
+  background: #4fd1bd;
+  box-shadow:
+    0 0 0 3px rgba(79, 209, 189, 0.18),
+    0 0 10px 2px rgba(13, 148, 136, 0.35);
 }
 
 /* Мигающий курсор, пока клиент «печатает» вопрос */
@@ -223,16 +287,10 @@ mark.hl {
   animation: float 7s ease-in-out infinite;
 }
 
+/* Анимация первого экрана остаётся и при «Уменьшить движение» (в Windows это выключенные
+   «Эффекты анимации» — частая настройка): она медленная и не двигает содержимое */
 @media (prefers-reduced-motion: reduce) {
   .reveal {
     translate: none !important;
-  }
-
-  .float-slow {
-    animation: none;
-  }
-
-  .step-line {
-    transition: none;
   }
 }

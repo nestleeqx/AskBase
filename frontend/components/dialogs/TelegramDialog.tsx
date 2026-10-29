@@ -105,7 +105,7 @@ export function TelegramDialog({ onClose }: { onClose: () => void }) {
             >
               <span
                 className={`grid size-6 shrink-0 place-items-center rounded-full text-xs font-semibold ${
-                  linked && i === 0 ? "bg-success-soft text-success" : "bg-accent-soft text-accent-ink"
+                  linked && i === 0 ? "bg-success-soft text-success" : "bg-sunken text-ink"
                 }`}
               >
                 {linked && i === 0 ? "✓" : i + 1}

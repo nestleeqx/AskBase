@@ -157,6 +157,8 @@ class DialogSummary(BaseModel):
     # Вымышленный демо-диалог: виден всем, ответить в нём нельзя
     demo: bool
     waiting_since: datetime | None
+    # Когда клиенту последний раз понадобился человек — по нему админка подаёт сигнал
+    attention_at: datetime | None = None
     # Пока не истекло, отвечает администратор, а бот молчит
     operator_until: datetime | None
     updated_at: datetime
@@ -180,11 +182,16 @@ class BookingOut(BaseModel):
     preferred_time: str
     status: str
     created_at: datetime
+    # Последнее действие клиента с заявкой в боте: создал, изменил, отменил
+    client_changed_at: datetime
     demo: bool
 
 
 class DialogDetail(DialogSummary):
+    # Страница переписки: последние сообщения или те, что раньше параметра before
     messages: list[MessageOut]
+    # Есть сообщения раньше этой страницы — админка подгрузит их при прокрутке вверх
+    has_more: bool = False
     bookings: list[BookingOut]
 
 

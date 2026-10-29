@@ -1,10 +1,11 @@
 "use client";
 
 import { AlertCircle, CheckCircle2, Download, ExternalLink, Layers, Loader2, Trash2 } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import useSWR from "swr";
 import { api } from "@/lib/api";
 import { formatNumber, formatSeconds, formatSize, KIND_LABELS, plural } from "@/lib/format";
+import { revealOnMobile } from "@/lib/reveal";
 import type { Doc } from "@/lib/types";
 import { useConfirm } from "../Confirm";
 import { ScopeNote } from "../ScopeNote";
@@ -125,7 +126,7 @@ function DocRow({
 function PendingRow({ name }: { name: string }) {
   return (
     <li className="rise flex items-center gap-3 px-4 py-3.5 sm:px-5">
-      <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-accent-soft text-accent">
+      <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-sunken text-ink">
         <Loader2 className="size-4.5 animate-spin" />
       </span>
       <div className="min-w-0">
@@ -163,6 +164,13 @@ export function DocumentsView() {
   const toast = useToast();
   const confirm = useConfirm();
   const closeDrawer = useCallback(() => setOpened(null), []);
+  const uploadsRef = useRef<HTMLElement>(null);
+  const uploading = pending.length > 0;
+
+  // Загрузка началась — на телефоне показываем строку с прогрессом, а не форму загрузки
+  useEffect(() => {
+    if (uploading) revealOnMobile(uploadsRef.current);
+  }, [uploading]);
 
   async function track(name: string, upload: () => Promise<Doc>): Promise<boolean> {
     const key = crypto.randomUUID();
@@ -245,7 +253,7 @@ export function DocumentsView() {
       {error && <Panel className="mt-6 p-5 text-sm text-danger">{error.message}</Panel>}
 
       {(own.length > 0 || pending.length > 0) && (
-        <section className="mt-8">
+        <section ref={uploadsRef} className="mt-8 scroll-mt-20">
           <SectionLabel className="mb-2 px-1">Ваши документы — видны только вам</SectionLabel>
           <Panel className="overflow-hidden">
             <ul className="divide-y divide-line">
