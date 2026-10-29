@@ -14,12 +14,13 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import { api } from "@/lib/api";
 import { formatShortTime, formatTime, plural } from "@/lib/format";
 import type { Booking, DialogDetail, DialogSummary } from "@/lib/types";
 import { BotBubble, OperatorBubble, UserBubble } from "../chat/Bubbles";
+import { LIST_PAGE, LoadMore } from "../LoadMore";
 import { useToast } from "../Toast";
 import { Button } from "../ui";
 import { TelegramDialog, useTelegram } from "./TelegramDialog";
@@ -206,7 +207,7 @@ function BookingLine({ booking }: { booking: Booking }) {
   const active = booking.status !== "cancelled";
   return (
     <Link
-      href="/admin/bookings"
+      href={`/admin/bookings?id=${booking.id}`}
       className={`flex items-start gap-1.5 text-xs leading-snug hover:text-ink ${active ? "text-ink-2" : "text-ink-3"}`}
     >
       <CalendarCheck className={`mt-px size-3.5 shrink-0 ${active ? "text-success" : "text-ink-3"}`} />
@@ -418,19 +419,26 @@ export function DialogsView() {
   const [query, setQuery] = useState("");
   const [search, setSearch] = useState("");
   const [waitingOnly, setWaitingOnly] = useState(false);
+  // Список клиентов — порциями: докрутили до конца, просим ещё. Смена поиска или фильтра — с начала
+  const [limit, setLimit] = useState(LIST_PAGE);
   const [connect, setConnect] = useState(false);
   const { data: telegram } = useTelegram();
 
   // Поиск — после паузы в наборе, а не на каждую букву
   useEffect(() => {
-    const t = setTimeout(() => setSearch(query.trim()), 300);
+    const t = setTimeout(() => {
+      setSearch(query.trim());
+      setLimit(LIST_PAGE);
+    }, 300);
     return () => clearTimeout(t);
   }, [query]);
 
-  const { data } = useSWR(["dialogs", search, waitingOnly], () => api.dialogs(search, waitingOnly), {
+  const { data } = useSWR(["dialogs", search, waitingOnly, limit], () => api.dialogs(search, waitingOnly, limit), {
     refreshInterval: 4000,
     keepPreviousData: true,
   });
+  const loadingMore = !!data?.has_more && data.dialogs.length < limit;
+  const more = useCallback(() => setLimit((l) => l + LIST_PAGE), []);
 
   // Открытый диалог — отдельный шаг в истории браузера: «Назад» со страницы заявок (и жест назад
   // на телефоне) возвращает в этот диалог, а не к списку
@@ -505,7 +513,10 @@ export function DialogsView() {
                   type="button"
                   role="tab"
                   aria-selected={waitingOnly === value}
-                  onClick={() => setWaitingOnly(value as boolean)}
+                  onClick={() => {
+                    setWaitingOnly(value as boolean);
+                    setLimit(LIST_PAGE);
+                  }}
                   className={`h-7 flex-1 rounded-lg transition-colors ${
                     waitingOnly === value ? "bg-surface text-ink shadow-sm" : "text-ink-2 hover:text-ink"
                   }`}
@@ -533,6 +544,7 @@ export function DialogsView() {
                 ))}
               </ul>
             )}
+            <LoadMore hasMore={!!data?.has_more} loading={loadingMore} onMore={more} />
           </div>
         </section>
 

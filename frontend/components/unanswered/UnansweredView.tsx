@@ -2,11 +2,12 @@
 
 import { BookPlus, Check, CircleHelp, MessageCircle, RotateCcw, Send } from "lucide-react";
 import Link from "next/link";
-import { useState, type FormEvent } from "react";
+import { useCallback, useState, type FormEvent } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import { api } from "@/lib/api";
 import { formatTime } from "@/lib/format";
 import type { UnansweredItem } from "@/lib/types";
+import { LIST_PAGE, LoadMore } from "../LoadMore";
 import { useToast } from "../Toast";
 import { Button } from "../ui";
 
@@ -180,17 +181,21 @@ function ItemCard({ item, onChange }: { item: UnansweredItem; onChange: (item: U
 export function UnansweredView() {
   const { mutate: mutateAll } = useSWRConfig();
   const [status, setStatus] = useState<Status>("open");
-  const { data, mutate } = useSWR(["unanswered", status], () => api.unanswered(status), {
+  // Вопросы — порциями: докрутили до конца, просим ещё. Другая вкладка — с начала
+  const [limit, setLimit] = useState(LIST_PAGE);
+  const { data, mutate } = useSWR(["unanswered", status, limit], () => api.unanswered(status, limit), {
     refreshInterval: 8000,
     keepPreviousData: true,
   });
+  const loadingMore = !!data?.has_more && data.items.length < limit;
+  const more = useCallback(() => setLimit((l) => l + LIST_PAGE), []);
 
   function changed() {
     mutate();
     // Счётчик в меню и вторая вкладка тоже поменялись
     mutateAll((key) => Array.isArray(key) && key[0] === "unanswered");
     // Ответ в базу добавляет документ «Ответы администратора»
-    mutateAll("documents");
+    mutateAll((key) => key === "documents" || (Array.isArray(key) && key[0] === "documents"));
   }
 
   return (
@@ -213,7 +218,10 @@ export function UnansweredView() {
             type="button"
             role="tab"
             aria-selected={status === value}
-            onClick={() => setStatus(value)}
+            onClick={() => {
+              setStatus(value);
+              setLimit(LIST_PAGE);
+            }}
             className={`h-7 rounded-lg px-3 transition-colors ${
               status === value ? "bg-surface text-ink shadow-sm" : "text-ink-2 hover:text-ink"
             }`}
@@ -243,6 +251,7 @@ export function UnansweredView() {
           ))}
         </ul>
       )}
+      <LoadMore hasMore={!!data?.has_more} loading={loadingMore} onMore={more} />
     </div>
   );
 }

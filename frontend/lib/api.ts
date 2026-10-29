@@ -107,7 +107,8 @@ export const api = {
   auth: () => request<AuthStatus>("/api/auth"),
   login: (password: string) => request<{ token: string }>("/api/auth/login", json("POST", { password })),
 
-  documents: () => request<DocumentList>("/api/documents"),
+  // Списки отдаются страницами: limit растёт, когда админка докручивает до конца
+  documents: (limit?: number) => request<DocumentList>(`/api/documents${limit ? `?limit=${limit}` : ""}`),
   uploadFile: (file: File) => {
     const form = new FormData();
     form.append("file", file);
@@ -124,12 +125,13 @@ export const api = {
   /** Без conversationId начинается новый диалог. */
   ask: (question: string, conversationId?: string | null) =>
     request<ChatReply>("/api/chat", json("POST", { question, conversation_id: conversationId ?? undefined })),
-  conversation: (id: string) => request<Conversation>(`/api/chat/${id}`),
+  conversation: (id: string, limit = 50) => request<Conversation>(`/api/chat/${id}?limit=${limit}`),
 
-  dialogs: (q = "", waiting = false) => {
+  dialogs: (q = "", waiting = false, limit?: number) => {
     const params = new URLSearchParams();
     if (q) params.set("q", q);
     if (waiting) params.set("waiting", "true");
+    if (limit) params.set("limit", String(limit));
     const query = params.toString();
     return request<DialogList>(`/api/dialogs${query ? `?${query}` : ""}`);
   },
@@ -138,13 +140,17 @@ export const api = {
   reply: (id: string, text: string) => request<DialogDetail>(`/api/dialogs/${id}/reply`, json("POST", { text })),
   release: (id: string) => request<DialogDetail>(`/api/dialogs/${id}/release`, json("POST")),
 
-  bookings: () => request<BookingList>("/api/bookings"),
+  bookings: (status: BookingStatus | "all" = "all", limit?: number, focus?: string | null) =>
+    request<BookingList>(
+      `/api/bookings?status=${status}${limit ? `&limit=${limit}` : ""}${focus ? `&focus=${encodeURIComponent(focus)}` : ""}`,
+    ),
   setBooking: (id: string, status: BookingStatus) => request<Booking>(`/api/bookings/${id}`, json("PATCH", { status })),
 
   telegram: () => request<TelegramStatus>("/api/telegram"),
   telegramLink: () => request<{ url: string }>("/api/telegram/link", json("POST")),
 
-  unanswered: (status: "open" | "resolved") => request<UnansweredList>(`/api/unanswered?status=${status}`),
+  unanswered: (status: "open" | "resolved", limit?: number) =>
+    request<UnansweredList>(`/api/unanswered?status=${status}${limit ? `&limit=${limit}` : ""}`),
   resolve: (id: number, resolved: boolean) =>
     request<UnansweredItem>(`/api/unanswered/${id}/resolve`, json("POST", { resolved })),
   answerToBase: (id: number, question: string, answer: string) =>

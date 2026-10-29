@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import useSWR from "swr";
 import { api } from "@/lib/api";
-import type { Booking, DialogSummary } from "@/lib/types";
+import type { Booking } from "@/lib/types";
 import { useToast } from "../Toast";
 
 const SOUND_KEY = "askbase:sound";
@@ -75,39 +75,40 @@ const POLL = { refreshInterval: 10000, refreshWhenHidden: true };
 export function useAlerts() {
   const toast = useToast();
   const { data: dialogs } = useSWR(["dialogs", "", false], () => api.dialogs(), POLL);
-  const { data: bookings } = useSWR("bookings", api.bookings, POLL);
+  const { data: bookings } = useSWR("bookings", () => api.bookings(), POLL);
   const waiting = dialogs?.waiting;
   const fresh = bookings?.new;
   // Последний раз, когда клиенту понадобился человек (позвал администратора, бот не нашёл ответа,
   // написал, пока отвечает администратор). Не число ждущих: клиент, который уже ждёт, может позвать
   // снова — число не изменится, а сигнал нужен. И не время любого сообщения: служебные сообщения
   // о записи в ждущем диалоге — не повод звать человека, о заявках сигналит отдельное событие
-  const latestWaiting = dialogs?.dialogs.reduce<DialogSummary | null>(
-    (top, d) => (d.attention_at && (!top || d.attention_at > top.attention_at!) ? d : top),
-    null,
-  );
+  // Сервер считает его по всем диалогам — список приходит страницами и может быть неполным
+  const latestWaiting = dialogs?.latest_attention;
   const attention = dialogs ? (latestWaiting?.attention_at ?? "") : undefined;
   // Последнее действие клиента с заявкой: создал, изменил или отменил. Подтверждение и отмена
   // администратором его не меняют — о своих же действиях админка не сигналит
-  const latestBooking = bookings?.bookings.reduce<Booking | null>(
-    (top, b) => (!top || b.client_changed_at > top.client_changed_at ? b : top),
-    null,
-  );
+  const latestBooking = bookings?.latest_client_change;
   const bookingAction = bookings ? (latestBooking?.client_changed_at ?? "") : undefined;
   const pathname = usePathname();
   const seen = useRef<{ attention?: string; bookingAction?: string }>({});
 
   useEffect(() => {
     const before = seen.current;
-    const events: { text: string; href: string }[] = [];
+    // page — раздел, откуда событие; href — сразу нужный диалог или заявка
+    const events: { text: string; page: string; href: string }[] = [];
     // Первую загрузку не считаем: сигналим только о том, что появилось, пока админка открыта
     if (attention && before.attention !== undefined && attention > before.attention)
       events.push({
         text: `Диалоги: ${latestWaiting?.title ?? "клиент"} ждёт администратора`,
-        href: "/admin/dialogs",
+        page: "/admin/dialogs",
+        href: latestWaiting ? `/admin/dialogs?id=${latestWaiting.id}` : "/admin/dialogs",
       });
     if (latestBooking && bookingAction && before.bookingAction !== undefined && bookingAction > before.bookingAction)
-      events.push({ text: `Заявки на запись: ${bookingText(latestBooking)}`, href: "/admin/bookings" });
+      events.push({
+        text: `Заявки на запись: ${bookingText(latestBooking)}`,
+        page: "/admin/bookings",
+        href: `/admin/bookings?id=${latestBooking.id}`,
+      });
     seen.current = {
       attention: attention ?? before.attention,
       bookingAction: bookingAction ?? before.bookingAction,
@@ -115,7 +116,7 @@ export function useAlerts() {
     if (!events.length) return;
     // Звук — всегда. Всплывашка — только если событие с другой страницы: в «Диалогах» новый
     // ждущий клиент и так виден в списке, подсказка «откуда» не нужна
-    events.filter((e) => !pathname.startsWith(e.href)).forEach((e) => toast.info(e.text, e.href));
+    events.filter((e) => !pathname.startsWith(e.page)).forEach((e) => toast.info(e.text, e.href));
     if (soundOn()) chime();
     // toast и подписи — новые на каждый рендер, а сигналить нужно только по новым событиям
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -125,13 +126,17 @@ export function useAlerts() {
   // между страницами ставит свой заголовок — следим за ним и возвращаем число
   const total = (waiting ?? 0) + (fresh ?? 0);
   useEffect(() => {
+    const observer = new MutationObserver(() => apply());
     const apply = () => {
       const base = document.title.replace(/^\(\d+\) /, "");
       const next = total ? `(${total}) ${base}` : base;
-      if (document.title !== next) document.title = next;
+      if (document.title === next) return;
+      document.title = next;
+      // Собственную правку заголовка не обрабатываем — реагируем только на смену страницы
+      observer.takeRecords();
     };
     apply();
-    const observer = new MutationObserver(apply);
+    // Весь <head>: Next.js при переходе может заменить <title> целиком, а не только его текст
     observer.observe(document.head, { subtree: true, childList: true, characterData: true });
     return () => observer.disconnect();
   }, [total]);

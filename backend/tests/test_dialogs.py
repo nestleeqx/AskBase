@@ -56,6 +56,36 @@ async def link(client, tg) -> str:
     return own[0]["id"]
 
 
+async def test_lists_come_in_pages(client):
+    # Диалоги: страница из трёх, но бейдж и сигнал — по всем восьми
+    page = (await client.get("/api/dialogs", params={"limit": 3})).json()
+    assert len(page["dialogs"]) == 3 and page["has_more"] is True
+    assert page["waiting"] == 2 and page["latest_attention"] is not None
+    rest = (await client.get("/api/dialogs", params={"limit": 8})).json()
+    assert len(rest["dialogs"]) == 8 and rest["has_more"] is False
+    # Ждущие — по-прежнему первыми
+    assert [d["waiting_since"] is not None for d in page["dialogs"][:2]] == [True, True]
+
+    # Заявки: страница из одной, счётчики вкладок — по всем
+    bookings = (await client.get("/api/bookings", params={"limit": 1})).json()
+    assert len(bookings["bookings"]) == 1 and bookings["has_more"] is True
+    assert bookings["counts"] == {"new": 1, "confirmed": 1, "all": 2} and bookings["new"] == 1
+    confirmed = (await client.get("/api/bookings", params={"status": "confirmed"})).json()
+    assert [b["status"] for b in confirmed["bookings"]] == ["confirmed"]
+    # Заявка из ссылки вне первой порции — сервер отдаёт столько, чтобы она попала в список
+    oldest = (await client.get("/api/bookings")).json()["bookings"][-1]
+    focused = (await client.get("/api/bookings", params={"limit": 1, "focus": oldest["id"]})).json()
+    assert focused["bookings"][-1]["id"] == oldest["id"]
+
+    # Документы: итоги по всей базе, а не по странице
+    docs = (await client.get("/api/documents", params={"limit": 2})).json()
+    assert len(docs["documents"]) == 2 and docs["has_more"] is True
+    assert docs["total"] == 4 and docs["chunks_total"] > 0
+
+    unanswered = (await client.get("/api/unanswered", params={"limit": 1})).json()
+    assert len(unanswered["items"]) == 1 and unanswered["has_more"] is (unanswered["open"] > 1)
+
+
 async def test_demo_dialogs_are_visible_and_readonly(client):
     data = (await client.get("/api/dialogs")).json()
     titles = [d["title"] for d in data["dialogs"]]

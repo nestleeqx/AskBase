@@ -1,6 +1,6 @@
 import time
 
-from fastapi import APIRouter, HTTPException, UploadFile
+from fastapi import APIRouter, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy import delete, func, or_, select
 
@@ -96,7 +96,10 @@ async def _check_quota(session: SessionDep, redis: RedisDep, ip: str, viewer: Vi
 
 
 @router.get("", response_model=DocumentList)
-async def list_documents(session: SessionDep, viewer: ViewerDep):
+async def list_documents(
+    session: SessionDep, viewer: ViewerDep, limit: int = Query(30, ge=1, le=1000)
+):
+    """Документы страницами: свои сверху, потом база клиники. Итоги — по всей базе."""
     docs = await session.scalars(
         select(Document)
         .where(or_(Document.visitor_id.is_(None), Document.visitor_id == viewer.visitor))
@@ -110,9 +113,13 @@ async def list_documents(session: SessionDep, viewer: ViewerDep):
         (d for d in docs if not _owns(viewer, d)),
         key=lambda d: seed_order.index(d.seed_key) if d.seed_key in seed_order else 99,
     )
+    ordered = own + base
     return DocumentList(
-        documents=[to_out(d, viewer) for d in own + base],
+        documents=[to_out(d, viewer) for d in ordered[:limit]],
         limits=await _limits(session, viewer),
+        has_more=len(ordered) > limit,
+        total=len(ordered),
+        chunks_total=sum(d.chunks_count for d in ordered if d.status == "ready"),
     )
 
 

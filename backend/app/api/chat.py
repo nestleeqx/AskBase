@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import select
 
 from app.config import get_settings
@@ -68,9 +68,23 @@ async def chat(
 
 
 @router.get("/{conversation_id}", response_model=ConversationOut)
-async def conversation(conversation_id: str, session: SessionDep, visitor: VisitorDep):
+async def conversation(
+    conversation_id: str,
+    session: SessionDep,
+    visitor: VisitorDep,
+    limit: int = Query(50, ge=1, le=1000),
+):
+    """Последние limit сообщений тестового чата — ранние подгружаются прокруткой вверх."""
     conv = await _own(session, conversation_id, visitor)
-    rows = await session.scalars(
-        select(Message).where(Message.conversation_id == conv.id).order_by(Message.id)
+    rows = list(
+        await session.scalars(
+            select(Message)
+            .where(Message.conversation_id == conv.id)
+            .order_by(Message.id.desc())
+            .limit(limit + 1)
+        )
     )
-    return ConversationOut(id=conv.id, messages=[message_out(m) for m in rows])
+    page = rows[:limit][::-1]
+    return ConversationOut(
+        id=conv.id, messages=[message_out(m) for m in page], has_more=len(rows) > limit
+    )

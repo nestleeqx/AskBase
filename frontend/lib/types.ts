@@ -32,7 +32,14 @@ export type UploadLimits = {
   guest_docs_ttl_hours: number;
 };
 
-export type DocumentList = { documents: Doc[]; limits: UploadLimits };
+/** Страница документов; total и chunks_total — по всей базе, has_more — есть ещё */
+export type DocumentList = {
+  documents: Doc[];
+  limits: UploadLimits;
+  has_more: boolean;
+  total: number;
+  chunks_total: number;
+};
 
 export type Chunk = {
   id: number;
@@ -89,7 +96,7 @@ export type ChatMessage = {
   created_at: string;
 };
 
-export type Conversation = { id: string; messages: ChatMessage[] };
+export type Conversation = { id: string; messages: ChatMessage[]; has_more: boolean };
 export type ChatReply = { conversation_id: string; user: ChatMessage; bot: ChatMessage };
 
 export type SearchResult = {
@@ -136,10 +143,24 @@ export type Booking = {
   demo: boolean;
 };
 
-export type DialogList = { dialogs: DialogSummary[]; waiting: number };
+/** Диалог, где клиенту последним понадобился человек, — для сигнала в админке */
+export type DialogAttention = { id: string; title: string; attention_at: string };
+export type DialogList = {
+  dialogs: DialogSummary[];
+  has_more: boolean;
+  waiting: number;
+  latest_attention: DialogAttention | null;
+};
 /** messages — последние сообщения переписки; has_more — есть более ранние, их подгружают прокруткой вверх */
 export type DialogDetail = DialogSummary & { messages: ChatMessage[]; has_more: boolean; bookings: Booking[] };
-export type BookingList = { bookings: Booking[]; new: number };
+/** counts — по статусам и всего (all) по всем заявкам; latest_client_change — последнее действие клиента */
+export type BookingList = {
+  bookings: Booking[];
+  has_more: boolean;
+  new: number;
+  counts: Partial<Record<BookingStatus | "all", number>>;
+  latest_client_change: Booking | null;
+};
 
 export type TelegramStatus = {
   enabled: boolean;
@@ -165,7 +186,7 @@ export type UnansweredItem = {
   kb_answer: string | null;
 };
 
-export type UnansweredList = { items: UnansweredItem[]; open: number; resolved: number };
+export type UnansweredList = { items: UnansweredItem[]; has_more: boolean; open: number; resolved: number };
 
 export type Tone = "neutral" | "friendly" | "formal" | "brief";
 

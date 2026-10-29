@@ -54,6 +54,7 @@ class UnansweredItem(BaseModel):
 
 class UnansweredList(BaseModel):
     items: list[UnansweredItem]
+    has_more: bool = False
     open: int
     resolved: int
 
@@ -95,7 +96,7 @@ async def _items(
             _visible(viewer),
         )
         .order_by(Message.id.desc())
-        .limit(200)
+        .limit(1000)
     )
     if message_id is not None:
         query = query.where(Message.id == message_id)
@@ -176,13 +177,17 @@ async def unanswered(
     redis: RedisDep,
     viewer: ViewerDep,
     status: Literal["open", "resolved", "all"] = Query("open"),
+    limit: int = Query(30, ge=1, le=1000),
 ):
+    """Вопросы без ответа страницами: первые limit, остальные админка подгружает прокруткой."""
     items = await _items(session, redis, viewer)
     opened = sum(1 for i in items if not i.resolved)
     total = len(items)
     if status != "all":
         items = [i for i in items if i.resolved == (status == "resolved")]
-    return UnansweredList(items=items, open=opened, resolved=total - opened)
+    return UnansweredList(
+        items=items[:limit], has_more=len(items) > limit, open=opened, resolved=total - opened
+    )
 
 
 @router.post("/{message_id}/resolve", response_model=UnansweredItem)

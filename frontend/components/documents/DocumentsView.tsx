@@ -2,7 +2,7 @@
 
 import { AlertCircle, CheckCircle2, Download, ExternalLink, Layers, Loader2, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import useSWR from "swr";
+import useSWR, { useSWRConfig } from "swr";
 import { api } from "@/lib/api";
 import { formatNumber, formatSeconds, formatSize, KIND_LABELS, plural } from "@/lib/format";
 import { revealOnMobile } from "@/lib/reveal";
@@ -10,6 +10,7 @@ import type { Doc } from "@/lib/types";
 import { useConfirm } from "../Confirm";
 import { ScopeNote } from "../ScopeNote";
 import { useToast } from "../Toast";
+import { LIST_PAGE, LoadMore } from "../LoadMore";
 import { buttonClasses, Panel, SectionLabel } from "../ui";
 import { ChunksDrawer } from "./ChunksDrawer";
 import { DocIcon } from "./DocIcon";
@@ -154,7 +155,11 @@ function ListSkeleton() {
 }
 
 export function DocumentsView() {
-  const { data, error, mutate } = useSWR("documents", api.documents, {
+  // Длинный список — порциями: докрутили до конца, просим ещё LIST_PAGE
+  const [limit, setLimit] = useState(LIST_PAGE);
+  const { mutate: mutateAll } = useSWRConfig();
+  const { data, error } = useSWR(["documents", limit], () => api.documents(limit), {
+    keepPreviousData: true,
     // Пока что-то индексируется — опрашиваем, потом перестаём
     refreshInterval: (latest) => (latest?.documents.some((d) => d.status === "indexing") ? 2000 : 0),
   });
@@ -177,7 +182,7 @@ export function DocumentsView() {
     setPending((p) => [{ key, name }, ...p]);
     try {
       const doc = await upload();
-      await mutate();
+      await refresh();
       setFresh(doc.id);
       if (doc.status === "ready") {
         toast.ok(`«${doc.title}» готов за ${formatSeconds(doc.index_ms ?? 0)} — по нему уже можно искать.`);
@@ -202,7 +207,7 @@ export function DocumentsView() {
     if (!ok) return;
     try {
       await api.deleteDocument(doc.id);
-      await mutate();
+      await refresh();
       toast.ok("Документ удалён.");
     } catch (e) {
       toast.error(e);
@@ -212,7 +217,10 @@ export function DocumentsView() {
   const docs = data?.documents ?? [];
   const own = docs.filter((d) => d.own);
   const base = docs.filter((d) => !d.own);
-  const chunks = docs.filter((d) => d.status === "ready").reduce((sum, d) => sum + d.chunks_count, 0);
+  const loadingMore = !!data?.has_more && docs.length < limit;
+  const more = useCallback(() => setLimit((l) => l + LIST_PAGE), []);
+  // После загрузки или удаления обновляем и список, и счётчик документов в меню
+  const refresh = () => mutateAll((key) => key === "documents" || (Array.isArray(key) && key[0] === "documents"));
 
   const rows = (list: Doc[]) =>
     list.map((doc) => (
@@ -271,14 +279,15 @@ export function DocumentsView() {
           <SectionLabel className="">Документы клиники</SectionLabel>
           {data && (
             <span className="text-xs text-ink-3">
-              Всего в базе: {docs.length} {plural(docs.length, ["документ", "документа", "документов"])}, {chunks}{" "}
-              {plural(chunks, ["фрагмент", "фрагмента", "фрагментов"])}
+              Всего в базе: {data.total} {plural(data.total, ["документ", "документа", "документов"])},{" "}
+              {data.chunks_total} {plural(data.chunks_total, ["фрагмент", "фрагмента", "фрагментов"])}
             </span>
           )}
         </div>
         <Panel className="overflow-hidden">
           {data ? <ul className="divide-y divide-line">{rows(base)}</ul> : <ListSkeleton />}
         </Panel>
+        <LoadMore hasMore={!!data?.has_more} loading={loadingMore} onMore={more} />
       </section>
 
       {opened && <ChunksDrawer docId={opened} onClose={closeDrawer} />}

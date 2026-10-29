@@ -125,8 +125,12 @@ async def test_follow_up_uses_history(client):
     # Нашёлся фрагмент прайса с винирами — по уточнённому вопросу
     assert any("винир" in h["text"].lower() for h in bot["trace"]["hits"][:3])
 
-    messages = (await client.get(f"/api/chat/{conv}")).json()["messages"]
-    assert [m["role"] for m in messages] == ["user", "bot", "user", "bot"]
+    history = (await client.get(f"/api/chat/{conv}")).json()
+    assert [m["role"] for m in history["messages"]] == ["user", "bot", "user", "bot"]
+    assert history["has_more"] is False
+    # Длинную историю отдаём с конца: последние сообщения, ранние — по прокрутке вверх
+    last = (await client.get(f"/api/chat/{conv}", params={"limit": 2})).json()
+    assert last["has_more"] is True and last["messages"] == history["messages"][2:]
 
 
 async def test_llm_failure_hands_off_politely(client):

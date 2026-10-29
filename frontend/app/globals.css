@@ -294,3 +294,25 @@ mark.hl {
     translate: none !important;
   }
 }
+
+/* Заявка, открытая по ссылке из диалога или уведомления: рамка вспыхивает и плавно гаснет */
+@keyframes focus-flash {
+  0% {
+    opacity: 0;
+  }
+  12%,
+  60% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.focus-flash {
+  border: 2px solid var(--color-accent);
+  box-shadow:
+    0 0 0 5px rgba(13, 148, 136, 0.16),
+    0 14px 32px -14px rgba(13, 148, 136, 0.5);
+  animation: focus-flash 3.2s ease-out forwards;
+}

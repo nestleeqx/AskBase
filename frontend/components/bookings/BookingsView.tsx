@@ -2,11 +2,13 @@
 
 import { CalendarCheck, Check, MessageCircle, Phone, RotateCcw, X } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
-import useSWR from "swr";
+import { useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
+import useSWR, { useSWRConfig } from "swr";
 import { api } from "@/lib/api";
 import { formatTime } from "@/lib/format";
 import type { Booking, BookingStatus } from "@/lib/types";
+import { LIST_PAGE, LoadMore } from "../LoadMore";
 import { useToast } from "../Toast";
 import { Button } from "../ui";
 
@@ -23,7 +25,16 @@ const FILTERS: [BookingStatus | "all", string][] = [
   ["cancelled", "Отменённые"],
 ];
 
-function BookingCard({ booking, onChange }: { booking: Booking; onChange: (b: Booking) => void }) {
+function BookingCard({
+  booking,
+  focused,
+  onChange,
+}: {
+  booking: Booking;
+  /** Открыли по ссылке на эту заявку (из диалога или уведомления) */
+  focused: boolean;
+  onChange: (b: Booking) => void;
+}) {
   const toast = useToast();
   const [busy, setBusy] = useState<BookingStatus | null>(null);
   const status = STATUS[booking.status];
@@ -39,11 +50,23 @@ function BookingCard({ booking, onChange }: { booking: Booking; onChange: (b: Bo
     }
   }
 
+  const ref = useRef<HTMLLIElement>(null);
+
+  // Открыли по ссылке на эту заявку — прокручиваем к ней; подсветку рисует вспышка ниже
+  useEffect(() => {
+    if (focused) ref.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [focused]);
+
   const rows: [string, string][] = [["Удобное время", booking.preferred_time]];
   if (booking.reason) rows.unshift(["Повод", booking.reason]);
 
   return (
-    <li className="rise flex flex-col rounded-2xl border border-line bg-surface p-4 sm:p-5">
+    <li
+      ref={ref}
+      className="rise relative flex scroll-mt-24 flex-col rounded-2xl border border-line bg-surface p-4 sm:p-5"
+    >
+      {/* Рамка вспыхивает и гаснет сама (CSS-анимация) — не остаётся навсегда */}
+      {focused && <span aria-hidden className="focus-flash pointer-events-none absolute -inset-px rounded-2xl" />}
       <div className="flex items-start gap-3">
         <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-sunken text-ink">
           <CalendarCheck className="size-4.5" />
@@ -146,14 +169,29 @@ function BookingCard({ booking, onChange }: { booking: Booking; onChange: (b: Bo
 }
 
 export function BookingsView() {
-  const { data, mutate } = useSWR("bookings", api.bookings, { refreshInterval: 5000 });
+  const focus = useSearchParams().get("id");
   const [filter, setFilter] = useState<BookingStatus | "all">("all");
-  const items = data?.bookings.filter((b) => filter === "all" || b.status === filter) ?? [];
+  // Заявки — порциями: фильтр по статусу на сервере, докрутили до конца — просим ещё
+  const [limit, setLimit] = useState(LIST_PAGE);
+  const { mutate: mutateAll } = useSWRConfig();
+  // focus — заявка из ссылки: сервер отдаст столько, чтобы она точно попала в список
+  const { data } = useSWR(["bookings", filter, limit, focus], () => api.bookings(filter, limit, focus), {
+    refreshInterval: 5000,
+    keepPreviousData: true,
+  });
+  const items = data?.bookings ?? [];
+  const loadingMore = !!data?.has_more && items.length < limit;
+  // Сервер мог отдать больше limit (чтобы показать заявку из ссылки) — дальше считаем от этого числа
+  const more = useCallback(() => setLimit((l) => Math.max(l, items.length) + LIST_PAGE), [items.length]);
 
-  function changed(b: Booking) {
-    if (!data) return;
-    const bookings = data.bookings.map((x) => (x.id === b.id ? b : x));
-    mutate({ bookings, new: bookings.filter((x) => x.status === "new").length });
+  function pick(next: BookingStatus | "all") {
+    setFilter(next);
+    setLimit(LIST_PAGE);
+  }
+
+  function changed() {
+    // Статус поменялся — обновляем список, счётчики вкладок и бейдж в меню
+    mutateAll((key) => key === "bookings" || (Array.isArray(key) && key[0] === "bookings"));
   }
 
   return (
@@ -166,14 +204,13 @@ export function BookingsView() {
 
       <div className="mt-5 flex gap-1 overflow-x-auto rounded-xl bg-sunken p-1 text-xs font-medium scrollbar-none sm:w-fit">
         {FILTERS.map(([value, label]) => {
-          const count =
-            value === "all" ? data?.bookings.length : data?.bookings.filter((b) => b.status === value).length;
+          const count = data?.counts[value];
           return (
             <button
               key={value}
               type="button"
               aria-pressed={filter === value}
-              onClick={() => setFilter(value)}
+              onClick={() => pick(value)}
               className={`h-7 shrink-0 rounded-lg px-3 transition-colors ${
                 filter === value ? "bg-surface text-ink shadow-sm" : "text-ink-2 hover:text-ink"
               }`}
@@ -196,10 +233,16 @@ export function BookingsView() {
       ) : (
         <ul className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {items.map((b) => (
-            <BookingCard key={b.id} booking={b} onChange={changed} />
+            <BookingCard
+              key={b.id === focus ? `${b.id}:focus` : b.id}
+              booking={b}
+              focused={b.id === focus}
+              onChange={changed}
+            />
           ))}
         </ul>
       )}
+      <LoadMore hasMore={!!data?.has_more} loading={loadingMore} onMore={more} />
     </div>
   );
 }

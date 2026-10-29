@@ -36,8 +36,13 @@ class UploadLimits(BaseModel):
 
 
 class DocumentList(BaseModel):
+    # Страница списка: первые limit документов — остальные админка подгружает прокруткой
     documents: list[DocumentOut]
     limits: UploadLimits
+    has_more: bool = False
+    # Всего документов и готовых фрагментов в базе — не только на этой странице
+    total: int = 0
+    chunks_total: int = 0
 
 
 class UrlIn(BaseModel):
@@ -127,7 +132,9 @@ class MessageOut(BaseModel):
 
 class ConversationOut(BaseModel):
     id: str
+    # Последние сообщения тестового чата; has_more — есть более ранние
     messages: list[MessageOut]
+    has_more: bool = False
 
 
 class ChatReply(BaseModel):
@@ -166,10 +173,22 @@ class DialogSummary(BaseModel):
     last: DialogLast | None
 
 
+class DialogAttention(BaseModel):
+    """Диалог, где клиенту последним понадобился человек, — для сигнала в админке."""
+
+    id: str
+    title: str
+    attention_at: datetime
+
+
 class DialogList(BaseModel):
+    # Страница списка; has_more — есть ещё диалоги, админка подгрузит их прокруткой
     dialogs: list[DialogSummary]
+    has_more: bool = False
     # Сколько диалогов ждут ответа администратора — бейдж в меню
     waiting: int
+    # Последний зов человека по всем диалогам, а не только на этой странице
+    latest_attention: DialogAttention | None = None
 
 
 class BookingOut(BaseModel):
@@ -200,8 +219,15 @@ class ReplyIn(BaseModel):
 
 
 class BookingList(BaseModel):
+    # Страница списка с выбранным статусом; has_more — есть ещё заявки
     bookings: list[BookingOut]
+    has_more: bool = False
+    # Ждут звонка — бейдж в меню
     new: int
+    # Сколько заявок в каждом статусе и всего (all) — для вкладок-фильтров
+    counts: dict[str, int] = {}
+    # Последнее действие клиента по всем заявкам — для сигнала в админке
+    latest_client_change: BookingOut | None = None
 
 
 class BookingPatch(BaseModel):

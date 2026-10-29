@@ -67,19 +67,19 @@ function NavItem({ item, onNavigate }: { item: Item; onNavigate?: () => void }) 
 
 function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   // Тот же запрос, что у страницы документов, — SWR его не дублирует
-  const { data } = useSWR("documents", api.documents);
+  const { data } = useSWR("documents", () => api.documents());
   const knowledge: Item[] = [
     {
       href: "/admin/documents",
       label: "Документы",
       icon: <FileStack className="size-4" />,
-      badge: data ? data.documents.length : null,
+      badge: data ? data.total : null,
     },
     { href: "/admin/search", label: "Проверка поиска", icon: <SearchCheck className="size-4" /> },
   ];
   // Бейджи: сколько клиентов ждут администратора и сколько заявок ждут звонка
   const { data: dialogs } = useSWR(["dialogs", "", false], () => api.dialogs(), { refreshInterval: 10000 });
-  const { data: bookings } = useSWR("bookings", api.bookings, { refreshInterval: 10000 });
+  const { data: bookings } = useSWR("bookings", () => api.bookings(), { refreshInterval: 10000 });
   const { data: auth } = useSWR("auth", api.auth);
   // Тот же ключ, что у вкладки «Нерешённые», — после ответа в базу бейдж обновится сам
   const { data: unanswered } = useSWR(["unanswered", "open"], () => api.unanswered("open"), {

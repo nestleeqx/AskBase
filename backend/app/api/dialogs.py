@@ -7,6 +7,7 @@
 import logging
 from datetime import timedelta
 from html import escape
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import exists, func, or_, select
@@ -20,6 +21,7 @@ from app.schemas import (
     BookingList,
     BookingOut,
     BookingPatch,
+    DialogAttention,
     DialogDetail,
     DialogLast,
     DialogList,
@@ -40,6 +42,8 @@ DEMO_READONLY = (
 SEND_FAILED = "Не удалось отправить сообщение в Telegram. Попробуйте ещё раз."
 # Сколько сообщений переписки отдаём за раз
 PAGE = 50
+# Сколько диалогов и заявок в списке отдаём за раз — остальные админка подгружает прокруткой
+LIST_PAGE = 30
 BOT_BACK = (
     "Снова на связи бот клиники. Если понадобится администратор — нажмите "
     "«Связаться с администратором»."
@@ -127,12 +131,15 @@ async def dialogs(
     viewer: ViewerDep,
     q: str = Query("", max_length=100),
     waiting: bool = False,
+    limit: int = Query(LIST_PAGE, ge=1, le=1000),
 ):
-    query = (
+    """Список диалогов страницами: первые limit, остальные админка подгружает прокруткой."""
+    visible = (
         select(Conversation, TelegramChat)
         .join(TelegramChat, TelegramChat.conversation_id == Conversation.id)
         .where(_visible(viewer))
     )
+    query = visible
     words = q.strip()
     if words:
         pattern = "%" + words.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
@@ -145,7 +152,13 @@ async def dialogs(
                 ),
             )
         )
-    rows = (await session.execute(query)).all()
+    if waiting:
+        query = query.where(Conversation.waiting_since.is_not(None))
+    # Сначала те, кто ждёт человека, затем по свежести. На один больше — видно, есть ли ещё
+    query = query.order_by(Conversation.waiting_since.is_(None), Conversation.updated_at.desc())
+    rows = (await session.execute(query.limit(limit + 1))).all()
+    has_more = len(rows) > limit
+    rows = rows[:limit]
 
     ids = [conv.id for conv, _ in rows]
     counts = dict(
@@ -173,12 +186,29 @@ async def dialogs(
         DialogSummary(**_summary(conv, chat, counts.get(conv.id, 0), lasts.get(conv.id)))
         for conv, chat in rows
     ]
-    total_waiting = sum(1 for d in items if d.waiting_since)
-    if waiting:
-        items = [d for d in items if d.waiting_since]
-    # Сначала те, кто ждёт человека, затем по свежести
-    items.sort(key=lambda d: (d.waiting_since is None, -d.updated_at.timestamp()))
-    return DialogList(dialogs=items, waiting=total_waiting)
+    # Бейдж и сигнал — по всем диалогам, а не только по загруженной странице
+    total_waiting = await session.scalar(
+        select(func.count()).select_from(
+            visible.where(Conversation.waiting_since.is_not(None)).subquery()
+        )
+    )
+    attention = (
+        await session.execute(
+            visible.where(Conversation.attention_at.is_not(None))
+            .order_by(Conversation.attention_at.desc())
+            .limit(1)
+        )
+    ).first()
+    return DialogList(
+        dialogs=items,
+        has_more=has_more,
+        waiting=total_waiting or 0,
+        latest_attention=DialogAttention(
+            id=attention[0].id, title=attention[1].title, attention_at=attention[0].attention_at
+        )
+        if attention
+        else None,
+    )
 
 
 @router.get("/dialogs/{conversation_id}", response_model=DialogDetail)
@@ -263,18 +293,55 @@ async def release(conversation_id: str, session: SessionDep, viewer: ViewerDep):
 
 
 @router.get("/bookings", response_model=BookingList)
-async def bookings(session: SessionDep, viewer: ViewerDep):
-    rows = (
-        await session.execute(
-            select(Booking, TelegramChat.title, Conversation.visitor_id)
-            .join(Conversation, Conversation.id == Booking.conversation_id)
-            .join(TelegramChat, TelegramChat.conversation_id == Conversation.id)
-            .where(_visible(viewer))
-            .order_by(Booking.created_at.desc())
+async def bookings(
+    session: SessionDep,
+    viewer: ViewerDep,
+    status: Literal["all", "new", "confirmed", "cancelled"] = "all",
+    limit: int = Query(LIST_PAGE, ge=1, le=1000),
+    focus: str | None = Query(None, max_length=36),
+):
+    """Заявки страницами, с фильтром по статусу; счётчики вкладок — по всем заявкам."""
+    visible = (
+        select(Booking, TelegramChat.title, Conversation.visitor_id)
+        .join(Conversation, Conversation.id == Booking.conversation_id)
+        .join(TelegramChat, TelegramChat.conversation_id == Conversation.id)
+        .where(_visible(viewer))
+    )
+    query = visible if status == "all" else visible.where(Booking.status == status)
+    if focus:
+        # Открыли по ссылке конкретную заявку — отдаём столько, чтобы она попала в список
+        target = await session.scalar(
+            query.with_only_columns(Booking.created_at).where(Booking.id == focus)
         )
-    ).all()
-    items = [_booking_out(b, title, owner == DEMO_VISITOR) for b, title, owner in rows]
-    return BookingList(bookings=items, new=sum(1 for b in items if b.status == "new"))
+        if target is not None:
+            newer = await session.scalar(
+                select(func.count()).select_from(
+                    query.where(Booking.created_at > target).subquery()
+                )
+            )
+            limit = max(limit, (newer or 0) + 1)
+    rows = (await session.execute(query.order_by(Booking.created_at.desc()).limit(limit + 1))).all()
+    items = [_booking_out(b, title, owner == DEMO_VISITOR) for b, title, owner in rows[:limit]]
+
+    by_status = visible.with_only_columns(Booking.status, func.count()).group_by(Booking.status)
+    counts = dict((await session.execute(by_status)).all())
+    counts["all"] = sum(counts.values())
+    latest = (
+        await session.execute(
+            visible.where(Booking.client_changed_at.is_not(None))
+            .order_by(Booking.client_changed_at.desc())
+            .limit(1)
+        )
+    ).first()
+    return BookingList(
+        bookings=items,
+        has_more=len(rows) > limit,
+        new=counts.get("new", 0),
+        counts=counts,
+        latest_client_change=_booking_out(latest[0], latest[1], latest[2] == DEMO_VISITOR)
+        if latest
+        else None,
+    )
 
 
 @router.patch("/bookings/{booking_id}", response_model=BookingOut)
