@@ -37,20 +37,26 @@ const NAV_ITEM = "group flex h-9 items-center gap-2.5 rounded-lg px-2.5 text-sm 
 function NavItem({ item, onNavigate }: { item: Item; onNavigate?: () => void }) {
   const pathname = usePathname();
   const active = !item.external && pathname === item.href;
+  const className = `${NAV_ITEM} ${
+    active ? "bg-sunken font-medium text-ink" : "text-ink-2 hover:bg-sunken/70 hover:text-ink"
+  }`;
+
+  // Сайт клиники — статичная HTML-страница, а не страница приложения: обычная ссылка без
+  // предзагрузки Next.js (иначе он запрашивает её как маршрут и получает 404 в консоли)
+  if (item.external)
+    return (
+      <a href={item.href} target="_blank" rel="noreferrer" onClick={onNavigate} className={className}>
+        <span className="text-ink-3 group-hover:text-ink-2">{item.icon}</span>
+        {item.label}
+        <ArrowUpRight className="ml-auto size-3.5 text-ink-3" />
+      </a>
+    );
 
   return (
-    <Link
-      href={item.href}
-      onClick={onNavigate}
-      target={item.external ? "_blank" : undefined}
-      aria-current={active ? "page" : undefined}
-      className={`${NAV_ITEM} ${
-        active ? "bg-sunken font-medium text-ink" : "text-ink-2 hover:bg-sunken/70 hover:text-ink"
-      }`}
-    >
+    <Link href={item.href} onClick={onNavigate} aria-current={active ? "page" : undefined} className={className}>
       <span className={active ? "text-accent" : "text-ink-3 group-hover:text-ink-2"}>{item.icon}</span>
       {item.label}
-      {item.external && <ArrowUpRight className="ml-auto size-3.5 text-ink-3" />}
+
       {item.badge === null && <span className="skeleton ml-auto h-4 w-5 rounded-md" aria-hidden />}
       {!!item.badge && (
         <span

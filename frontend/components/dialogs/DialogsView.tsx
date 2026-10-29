@@ -284,6 +284,43 @@ function BookingStrip({ bookings }: { bookings: Booking[] }) {
   );
 }
 
+// Заглушка переписки — силуэт чата: клиент слева, бот справа, разной длины, как в настоящем диалоге
+const SKELETON_BUBBLES: [side: "left" | "right", width: string, height: string][] = [
+  ["left", "w-2/5", "h-10"],
+  ["right", "w-3/5", "h-16"],
+  ["left", "w-1/3", "h-10"],
+  ["right", "w-1/2", "h-20"],
+  ["left", "w-2/5", "h-10"],
+];
+
+function ThreadSkeleton() {
+  return (
+    <div className="flex flex-1 flex-col" aria-busy aria-label="Загружаю переписку">
+      <div className="flex items-center gap-3 border-b border-line px-3 py-3 sm:px-5">
+        <span className="skeleton size-10 shrink-0 rounded-full" />
+        <div className="flex-1 space-y-1.5">
+          <span className="skeleton block h-4 w-32 rounded" />
+          <span className="skeleton block h-3 w-48 rounded" />
+        </div>
+      </div>
+      <div className="flex-1 space-y-4 overflow-hidden bg-sunken/40 px-3 py-4 sm:px-5">
+        {SKELETON_BUBBLES.map(([side, width, height], i) => (
+          <div key={i} className={`flex flex-col gap-1 ${side === "right" ? "items-end" : "items-start"}`}>
+            <span
+              className={`skeleton block ${width} ${height} rounded-2xl ${side === "right" ? "rounded-tr-md" : "rounded-tl-md"}`}
+            />
+            <span className="skeleton block h-2.5 w-20 rounded" />
+          </div>
+        ))}
+      </div>
+      <div className="flex items-end gap-2 border-t border-line p-3 sm:p-4">
+        <span className="skeleton block h-11 flex-1 rounded-xl" />
+        <span className="skeleton block size-11 shrink-0 rounded-xl" />
+      </div>
+    </div>
+  );
+}
+
 function Thread({ id, onBack }: { id: string; onBack: () => void }) {
   const { mutate: mutateAll } = useSWRConfig();
   // Сколько последних сообщений показываем: длинная переписка грузится не целиком, а по PAGE —
@@ -333,7 +370,7 @@ function Thread({ id, onBack }: { id: string; onBack: () => void }) {
         </div>
       </div>
     );
-  if (!data) return <div className="skeleton m-4 flex-1 rounded-2xl" />;
+  if (!data) return <ThreadSkeleton />;
 
   function changed() {
     // Ответ сервера — только последняя страница; перечитываем столько, сколько уже показано
