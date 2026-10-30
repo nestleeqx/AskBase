@@ -164,15 +164,6 @@ docker compose up -d --build
 
 Telegram отдаёт сообщения либо вебхуку, либо опросу. Если у бота стоит вебхук прода, локальный сервис `bot` их не получает и пишет об этом в лог — для локальной проверки заведите отдельного бота.
 
-### Тесты
-
-Тесты бэкенда идут на Postgres с pgvector из того же compose:
-
-```bash
-docker compose up -d postgres redis
-cd backend && uv run pytest
-```
-
 ## Деплой на Vercel
 
 Фронтенд и бэкенд — два проекта Vercel из одного репозитория: Root Directory `frontend` и `backend`. База — Postgres с расширением pgvector (Neon), кеш и лимиты — Redis (Upstash, ключи с префиксом `askbase:`). Обе подключаются во вкладке Storage, переменные подставляются сами. Telegram-бот на Vercel работает через вебхук: он ставится сам при первом открытии сайта. Ночная очистка документов гостей — Vercel Cron, раз в сутки вызывает `/api/cron/cleanup` с `CRON_SECRET`.
