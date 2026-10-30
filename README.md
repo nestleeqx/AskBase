@@ -164,25 +164,6 @@ docker compose up -d --build
 
 Telegram отдаёт сообщения либо вебхуку, либо опросу. Если у бота стоит вебхук прода, локальный сервис `bot` их не получает и пишет об этом в лог — для локальной проверки заведите отдельного бота.
 
-## Деплой на Vercel
-
-Фронтенд и бэкенд — два проекта Vercel из одного репозитория: Root Directory `frontend` и `backend`. База — Postgres с расширением pgvector (Neon), кеш и лимиты — Redis (Upstash, ключи с префиксом `askbase:`). Обе подключаются во вкладке Storage, переменные подставляются сами. Telegram-бот на Vercel работает через вебхук: он ставится сам при первом открытии сайта. Ночная очистка документов гостей — Vercel Cron, раз в сутки вызывает `/api/cron/cleanup` с `CRON_SECRET`.
-
-| Проект | Переменная | Значение |
-| --- | --- | --- |
-| backend | `OPENAI_API_KEY` | ключ OpenAI — для ответов и эмбеддингов |
-| backend | `OPENAI_MODEL` | `gpt-5.6-luna` |
-| backend | `OPENAI_REASONING_EFFORT` | `none` |
-| backend | `CORS_ORIGINS` | адрес фронтенда, `https://….vercel.app` |
-| backend | `CORS_ORIGIN_REGEX` | превью-деплои, например `^https://askbase-.*\.vercel\.app$` |
-| backend | `SITE_URL` | адрес фронтенда — для ссылок в уведомлениях менеджеру |
-| backend | `CRON_SECRET` | случайная строка |
-| backend | `TELEGRAM_BOT_TOKEN` | токен бота от @BotFather |
-| backend | `OWNER_PASSWORD` | пароль владельца клиники; пусто — только гостевой вход |
-| backend | `MANAGER_CHAT_ID` | необязательно: чат для уведомлений о заявках и вопросах без ответа |
-| backend | `DATABASE_URL…`, `REDIS_URL` / `KV_URL` | подставляют Neon и Upstash |
-| frontend | `NEXT_PUBLIC_API_URL` | адрес бэкенда, `https://….vercel.app` |
-
 ---
 
 Демо-проект: клиника «Белая линия», врачи, цены и адрес вымышлены.
